@@ -1,8 +1,7 @@
 # =====================================================
-# 📊 BIST TEKNİK ANALİZ DASHBOARD v1.0.0
-# Streamlit + Plotly + Yahoo Finance + bistpy
+# 🚀 BIST TrendScout Pro v2.1 - Streamlit Dashboard
+# Gelişmiş Teknik Analiz ve Hisse Tarama Sistemi
 # =====================================================
-# Kurulum: pip install streamlit pandas numpy plotly yfinance ta scipy bistpy lxml html5lib
 # Çalıştırma: streamlit run app.py
 # =====================================================
 
@@ -10,374 +9,368 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import yfinance as yf
-import ta
-from scipy import signal
-import time
+from tvDatafeed import TvDatafeed, Interval
+from tqdm import tqdm
+import json
+import os
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import warnings
+import ssl
+from urllib import request
+import time
 
-warnings.filterwarnings('ignore')
-st.set_page_config(page_title="BIST Teknik Analiz", page_icon="📊", layout="wide")
-
-__version__ = "1.0.0"
+# Sayfa ayarları
+st.set_page_config(page_title="BIST TrendScout Pro", page_icon="📊", layout="wide")
 
 # =====================================================
-# 🔄 VERİ KATMANI (CACHE + API)
+# 🎨 CSS & TEMALAR
+# =====================================================
+st.markdown("""
+<style>
+    .main-header { font-size: 2rem; font-weight: bold; color: #1f77b4; text-align: center; padding: 1rem; }
+    .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center; }
+    .bull { color: #22c55e; font-weight: bold; }
+    .bear { color: #ef4444; font-weight: bold; }
+    .trend-strong { color: #dc2626; font-weight: bold; }
+    .trend-new { color: #2563eb; font-weight: bold; }
+    .trend-weak { color: #f59e0b; font-weight: bold; }
+    .stDataFrame { font-size: 0.9rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# =====================================================
+# ⚙️ KONFİGÜRASYON YÖNETİMİ
 # =====================================================
 @st.cache_data(ttl=3600)
-def get_bist_symbols():
-    """bistpy ile tüm aktif BIST hisselerini çeker"""
+def load_config():
+    """Varsayılan konfigürasyonu yükler"""
+    return {
+        "kriterler": {
+            "hacim_artis_min": 2.5,
+            "rsi_min": 57,
+            "momentum_min": 105,
+            "rsi_period": 14,
+            "momentum_period": 10,
+            "adx_period": 14,
+            "adx_trend_min": 19,
+            "adx_guclu_min": 29
+        },
+        "veri_ayarlari": {
+            "n_bars": 50,
+            "exchange": "BIST",
+            "interval": "gun"
+        }
+    }
+
+def save_results(results, filename="trendscout_sonuc.json"):
+    """Sonuçları JSON dosyasına kaydeder"""
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    return filename
+
+# =====================================================
+# 📡 VERİ ÇEKME (İş Yatırım + TradingView)
+# =====================================================
+@st.cache_data(ttl=1800)
+def get_bist_hisseleri():
+    """İş Yatırım'dan BIST hisse kodlarını çeker"""
+    url = "https://www.isyatirim.com.tr/tr-tr/analiz/hisse/Sayfalar/Temel-Degerler-Ve-Oranlar.aspx"
     try:
-        from bistpy import Bistpy
-        bp = Bistpy()
-        df = bp.get_stock_list()
-        col = next((c for c in df.columns if c.lower() in ['kod', 'symbol', 'sembol']), df.columns[0])
-        symbols = df[col].dropna().astype(str).str.strip().unique()
-        return [f"{s}.IS" for s in symbols if len(s) >= 2 and s.replace('.', '').isalnum()]
-    except ImportError:
-        st.error("❌ `bistpy` kurulu değil. `pip install bistpy` çalıştırın.")
-        return []
-    except Exception as e:
-        st.error(f"❌ Sembol çekme hatası: {e}")
-        return []
+        context = ssl._create_unverified_context()
+        html = request.urlopen(url, context=context, timeout=30).read()
+        tablolar = pd.read_html(html, decimal=",", thousands=".")
+        for t in tablolar:
+            if "Kod" in t.columns:
+                return t["Kod"].dropna().astype(str).str.strip().tolist()
+    except:
+        pass
+    # Yedek BIST 30 listesi
+    return ['AKBNK', 'ASELS', 'BIMAS', 'EREGL', 'FROTO', 'GARAN', 'HALKB', 'ISCTR', 
+            'KCHOL', 'KOZAL', 'KRDMD', 'PETKM', 'PGSUS', 'SAHOL', 'SISE', 'TCELL', 
+            'THYAO', 'TKFEN', 'TUPRS', 'ULKER', 'VAKBN', 'YKBNK', 'HEKTS', 'MAVI',
+            'SOKM', 'DOHOL', 'AFYON', 'AKCNS', 'AKFGY', 'AKGRT']
 
 @st.cache_data(ttl=300)
-def fetch_stock_data(symbol: str, period: str = '6mo'):
-    """Yahoo Finance'den OHLCV verisi çeker"""
+def fetch_tv_data(symbol, n_bars=50):
+    """TradingView'den hisse verisi çeker"""
     try:
-        df = yf.Ticker(symbol).history(period=period, interval='1d')
-        if df.empty or len(df) < 30:
-            return None
-        required = ['Open', 'High', 'Low', 'Close', 'Volume']
-        if not all(c in df.columns for c in required):
+        tv = TvDatafeed()
+        df = tv.get_hist(symbol=symbol, exchange="BIST", interval=Interval.in_daily, n_bars=n_bars)
+        if df is None or len(df) < 20:
             return None
         return df
-    except Exception:
+    except:
         return None
 
 # =====================================================
-# 🧮 TEKNİK ANALİZ MOTORU
+# 🧮 TEKNİK GÖSTERGELER (Orijinal Mantık)
 # =====================================================
-def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df['SMA20'] = ta.trend.sma_indicator(df['Close'], window=20)
-    df['SMA50'] = ta.trend.sma_indicator(df['Close'], window=50)
-    df['SMA200'] = ta.trend.sma_indicator(df['Close'], window=200)
-    df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
-    df['MACD'] = ta.trend.macd_diff(df['Close'])
-    df['MACD_signal'] = ta.trend.macd_signal(df['Close'])
-    df['BB_upper'] = ta.volatility.bollinger_hband(df['Close'])
-    df['BB_lower'] = ta.volatility.bollinger_lband(df['Close'])
-    df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'], window=14)
-    df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
-    df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
-    df['Volume_SMA20'] = ta.trend.sma_indicator(df['Volume'], window=20)
-    return df
+def rsi_hesapla(df, period=14):
+    delta = df["close"].diff()
+    gain = delta.where(delta > 0, 0).rolling(period).mean()
+    loss = -delta.where(delta < 0, 0).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
-def find_levels(df: pd.DataFrame, window: int = 20) -> dict:
-    res = df['High'].rolling(window).max().iloc[-window:].max()
-    sup = df['Low'].rolling(window).min().iloc[-window:].min()
-    h60, l60 = df['High'].rolling(60).max().iloc[-1], df['Low'].rolling(60).min().iloc[-1]
-    diff = h60 - l60
-    fib = {k: l60 + diff * v for k, v in [('0%', 0), ('23.6%', 0.236), ('38.2%', 0.382), 
-                                           ('50%', 0.5), ('61.8%', 0.618), ('100%', 1)]}
-    return {'resistance': res, 'support': sup, 'pivot': (res + sup) / 2, 'fibonacci': fib}
+def momentum_hesapla(df, period=10):
+    return (df["close"] / df["close"].shift(period)) * 100
 
-def detect_patterns(df: pd.DataFrame) -> dict:
-    if len(df) < 40:
-        return {}
-    patterns = {}
-    s = df.tail(40)
-    
-    # İkili Dip
-    dips = signal.find_peaks(-s['Low'].values, distance=10)[0]
-    if len(dips) >= 2 and abs(s['Low'].iloc[dips[-2]] - s['Low'].iloc[dips[-1]]) / s['Low'].iloc[dips[-2]] < 0.05:
-        patterns['İkili Dip'] = True
-        
-    # İkili Tepe
-    peaks = signal.find_peaks(s['High'].values, distance=10)[0]
-    if len(peaks) >= 2 and abs(s['High'].iloc[peaks[-2]] - s['High'].iloc[peaks[-1]]) / s['High'].iloc[peaks[-2]] < 0.05:
-        patterns['İkili Tepe'] = True
-        
-    # Çanak-Kulp (Basit)
-    if len(df) >= 60:
-        s60 = df.tail(60)
-        trend_up = s60['Close'].iloc[-1] > s60['Close'].iloc[-20]
-        mean_close = s60['Close'].mean()
-        std_close = s60['Close'].std()
-        if trend_up and abs(mean_close - s60['Close'].iloc[-1]) < std_close * 1.5:
-            patterns['Çanak-Kulp'] = True
-            
-    return patterns
+def adx_hesapla(df, period=14):
+    high, low, close = df["high"], df["low"], df["close"]
+    tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
+    plus_dm = high.diff().clip(lower=0)
+    minus_dm = (-low.diff()).clip(lower=0)
+    atr = tr.rolling(period).mean()
+    plus_di = 100 * (plus_dm.rolling(period).mean() / atr)
+    minus_di = 100 * (minus_dm.rolling(period).mean() / atr)
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
+    return dx.rolling(period).mean()
 
-def calculate_score(df: pd.DataFrame) -> int:
-    score = 50
-    rsi = df['RSI'].iloc[-1]
-    if rsi < 30: score += 15
-    elif rsi < 40: score += 5
-    elif rsi > 70: score -= 15
-    elif rsi > 60: score -= 5
-    
-    c = df['Close'].iloc[-1]
-    if c > df['SMA20'].iloc[-1]: score += 10
-    else: score -= 10
-    if c > df['SMA50'].iloc[-1]: score += 10
-    else: score -= 10
-    if df['SMA20'].iloc[-1] > df['SMA50'].iloc[-1]: score += 10
-    else: score -= 10
-    
-    if df['MACD'].iloc[-1] > df['MACD_signal'].iloc[-1]: score += 10
-    else: score -= 10
-    if df['Volume'].iloc[-1] > df['Volume_SMA20'].iloc[-1]: score += 5
-    if df['ADX'].iloc[-1] > 25: score += 5
-    
-    return max(0, min(100, score))
-
-def analyze_stock(symbol: str) -> dict | None:
-    df = fetch_stock_data(symbol)
+def analyze_stock(symbol, config):
+    """Tek hisse için analiz"""
+    df = fetch_tv_data(symbol, config["veri_ayarlari"]["n_bars"])
     if df is None:
         return None
     
-    df = calculate_indicators(df)
-    levels = find_levels(df)
-    patterns = detect_patterns(df)
-    score = calculate_score(df)
+    # Göstergeleri hesapla
+    df["RSI"] = rsi_hesapla(df, config["kriterler"]["rsi_period"])
+    df["Momentum"] = momentum_hesapla(df, config["kriterler"]["momentum_period"])
+    df["ADX"] = adx_hesapla(df, config["kriterler"]["adx_period"])
+    df["Hacim_Ort_20"] = df["volume"].rolling(20).mean()
     
-    s30 = df.tail(30)
-    vol_ratio = s30['Volume'].iloc[-1] / s30['Volume'].mean()
-    price_range = (s30['High'].max() - s30['Low'].min()) / s30['Low'].min()
-    obv_up = s30['OBV'].iloc[-1] > s30['OBV'].iloc[0]
-    acc_score = sum([vol_ratio > 1.2, price_range < 0.15, obv_up])
+    bugun, dun = df.iloc[-1], df.iloc[-2]
     
-    rec = 'GÜÇLÜ AL' if score >= 70 else 'AL' if score >= 55 else 'İZLE' if score >= 45 else 'BEKLE'
+    # Hacim artışı
+    hacim_k = bugun["volume"] / dun["volume"] if dun["volume"] > 0 else 0
+    hacim_patlamasi = bugun["volume"] > (bugun["Hacim_Ort_20"] * config["kriterler"]["hacim_artis_min"])
+    
+    # Kriter kontrolü
+    if not (
+        hacim_k >= config["kriterler"]["hacim_artis_min"]
+        and hacim_patlamasi
+        and bugun["RSI"] > config["kriterler"]["rsi_min"]
+        and bugun["Momentum"] > config["kriterler"]["momentum_min"]
+    ):
+        return None
+    
+    # Trend gücü
+    adx = bugun["ADX"]
+    if pd.isna(adx):
+        return None
+    if adx > config["kriterler"]["adx_guclu_min"]:
+        trend = "Güçlü Trend 🔥"
+    elif adx > config["kriterler"]["adx_trend_min"]:
+        trend = "Yeni Trend 📈"
+    else:
+        trend = "Zayıf ⚠️"
     
     return {
-        'symbol': symbol.replace('.IS', ''),
-        'price': df['Close'].iloc[-1],
-        'change': ((df['Close'].iloc[-1] - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100,
-        'score': score,
-        'rsi': df['RSI'].iloc[-1],
-        'adx': df['ADX'].iloc[-1],
-        'atr': df['ATR'].iloc[-1],
-        'levels': levels,
-        'patterns': patterns,
-        'acc_score': acc_score,
-        'rec': rec,
-        'df': df
+        "Hisse": symbol,
+        "Fiyat": round(bugun["close"], 2),
+        "RSI": round(bugun["RSI"], 2),
+        "Momentum": round(bugun["Momentum"], 2),
+        "ADX": round(adx, 2),
+        "Hacim_Artis": round(hacim_k, 2),
+        "Hacim_Patlamasi": True,
+        "Trend": trend,
+        "df": df  # Grafik için
     }
 
 # =====================================================
-# 📈 GÖRSELLEŞTİRME
+# 📈 PLOTLY GRAFİK
 # =====================================================
-def create_chart(df: pd.DataFrame, symbol: str, levels: dict) -> go.Figure:
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
+def create_chart(df, symbol):
+    """Interaktif mum grafik oluşturur"""
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+        name='Fiyat', increasing_line_color='#22c55e', decreasing_line_color='#ef4444'
+    )])
     
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Fiyat'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='SMA20', line=dict(color='#f59e0b', width=1.5)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], name='SMA50', line=dict(color='#3b82f6', width=1.5)), row=1, col=1)
-    fig.add_hline(y=levels['resistance'], line_dash="dash", line_color="#ef4444", row=1, col=1)
-    fig.add_hline(y=levels['support'], line_dash="dash", line_color="#22c55e", row=1, col=1)
-    
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='#9333ea', width=2)), row=2, col=1)
-    fig.add_hrect(y0=70, y1=100, fillcolor="rgba(239,68,68,0.1)", line_width=0, row=2, col=1)
-    fig.add_hrect(y0=0, y1=30, fillcolor="rgba(34,197,94,0.1)", line_width=0, row=2, col=1)
-    
-    colors = ['#22c55e' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#ef4444' for i in range(len(df))]
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Hacim', marker_color=colors, opacity=0.7), row=3, col=1)
+    # Hacim
+    fig.add_trace(go.Bar(
+        x=df.index, y=df['volume'], name='Hacim', marker_color=['#22c55e' if c>=o else '#ef4444' 
+        for o, c in zip(df['open'], df['close'])], opacity=0.5, yaxis='y2'
+    ))
     
     fig.update_layout(
-        height=650, hovermode='x unified', xaxis_rangeslider_visible=False,
-        template='plotly_white', showlegend=False, margin=dict(l=40, r=40, t=30, b=40)
+        title=f"{symbol} - Teknik Analiz",
+        yaxis_title='Fiyat (TL)',
+        yaxis2_title='Hacim',
+        yaxis2=dict(overlaying='y', side='right'),
+        hovermode='x unified',
+        template='plotly_white',
+        height=500,
+        xaxis_rangeslider_visible=False
     )
     return fig
 
 # =====================================================
 # 🔄 PARALEL TARAMA
 # =====================================================
-def scan_stocks(symbols: list, criteria: dict, progress_cb) -> list:
-    results, failed = [], 0
+def run_scan(symbols, config, progress_callback):
+    """Tüm hisseleri tarar"""
+    results = []
     total = len(symbols)
     
-    def worker(sym):
+    for i, hisse in enumerate(symbols):
         try:
-            res = analyze_stock(sym)
-            if not res: return None
-            if res['score'] < criteria['min_score']: return None
-            if res['rsi'] > criteria['max_rsi']: return None
-            return res
-        except Exception:
-            return None
-
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        futures = {ex.submit(worker, s): s for s in symbols}
-        for i, f in enumerate(as_completed(futures), 1):
-            try:
-                r = f.result(timeout=15)
-                if r: results.append(r)
-                else: failed += 1
-            except Exception:
-                failed += 1
-            if i % 10 == 0 or i == total:
-                progress_cb(i, total, failed, len(results))
-                
-    return sorted(results, key=lambda x: x['score'], reverse=True)
+            result = analyze_stock(hisse, config)
+            if result:
+                results.append(result)
+        except:
+            pass
+        
+        if progress_callback and (i + 1) % 10 == 0:
+            progress_callback(i + 1, total, len(results))
+    
+    return sorted(results, key=lambda x: x["ADX"], reverse=True)
 
 # =====================================================
-# 🎨 ARAYÜZ BİLEŞENLERİ
+# 🎨 SIDEBAR - AYARLAR
 # =====================================================
 def render_sidebar():
     with st.sidebar:
-        st.header(f"⚙️ Ayarlar v{__version__}")
-        min_score = st.slider("Minimum Teknik Puan", 0, 100, 55)
-        max_rsi = st.slider("Maksimum RSI", 30, 100, 75)
+        st.header("⚙️ Tarama Ayarları")
         
-        st.divider()
-        if st.button("🔄 Verileri & Cache'i Yenile", use_container_width=True):
+        # Kriterler
+        st.subheader("📊 Kriterler")
+        hacim_min = st.slider("Min Hacim Artışı (x)", 1.0, 5.0, 2.5, 0.1)
+        rsi_min = st.slider("Min RSI", 30, 80, 57)
+        momentum_min = st.slider("Min Momentum", 90, 120, 105)
+        adx_trend = st.slider("ADX Trend Eşiği", 10, 40, 19)
+        adx_guclu = st.slider("ADX Güçlü Trend", 20, 50, 29)
+        
+        # Veri Ayarları
+        st.subheader("📡 Veri Ayarları")
+        n_bars = st.selectbox("Geçmiş Veri (Bar)", [30, 50, 100, 200], index=1)
+        
+        # Hisse Seçimi
+        st.subheader("📋 Hisse Listesi")
+        if st.button("🔄 Listeyi Yenile", use_container_width=True):
             st.cache_data.clear()
-            st.session_state.pop('results', None)
-            st.session_state.pop('scan_done', None)
             st.rerun()
-            
-        with st.spinner("📡 Semboller yükleniyor..."):
-            symbols = get_bist_symbols()
-            
-        if not symbols:
-            st.error("⚠️ Sembol listesi boş. `bistpy` kurulumunu kontrol edin.")
-            return {'symbols': [], 'min_score': min_score, 'max_rsi': max_rsi, 'scan': False}
-            
-        st.success(f"✅ {len(symbols)} hisse hazır")
         
-        search = st.text_input("Hisse Ara", placeholder="örn: CGCAM")
-        filtered = [s for s in symbols if search.upper() in s.replace('.IS', '')] if search else symbols
-        default = st.session_state.get('sel_symbols', symbols)
-        selected = st.multiselect("Seçili Hisseler", symbols, default=default)
+        all_symbols = get_bist_hisseleri()
+        search = st.text_input("Hisse Ara", placeholder="örn: ASELS")
+        filtered = [s for s in all_symbols if search.upper() in s] if search else all_symbols
         
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("✅ Tümünü Seç", use_container_width=True):
-                st.session_state.sel_symbols = symbols
-                st.rerun()
-        with c2:
-            if st.button("🗑️ Temizle", use_container_width=True):
-                st.session_state.sel_symbols = []
-                st.rerun()
-                
-        st.session_state.sel_symbols = selected
+        selected = st.multiselect("Seçili Hisseler", all_symbols, default=filtered[:20] if filtered else all_symbols[:20])
+        
+        # Aksiyon
+        st.divider()
         scan_btn = st.button("🚀 TARAMAYI BAŞLAT", type="primary", use_container_width=True)
         
-        return {'symbols': selected, 'min_score': min_score, 'max_rsi': max_rsi, 'scan': scan_btn}
-
-def render_results(results: list):
-    if not results:
-        st.info("📊 Henüz tarama yapılmadı. Sol menüden ayarları seçip başlatın.")
-        return pd.DataFrame()
+        config = {
+            "kriterler": {
+                "hacim_artis_min": hacim_min,
+                "rsi_min": rsi_min,
+                "momentum_min": momentum_min,
+                "rsi_period": 14,
+                "momentum_period": 10,
+                "adx_period": 14,
+                "adx_trend_min": adx_trend,
+                "adx_guclu_min": adx_guclu
+            },
+            "veri_ayarlari": {
+                "n_bars": n_bars,
+                "exchange": "BIST",
+                "interval": "gun"
+            }
+        }
         
-    data = []
-    for r in results:
-        pat = ', '.join(r['patterns'].keys()) if r['patterns'] else '-'
-        data.append({
-            'Hisse': r['symbol'], 'Fiyat': f"{r['price']:.2f}", 'Değ. %': f"{r['change']:+.2f}",
-            'Puan': r['score'], 'RSI': f"{r['rsi']:.1f}", 'ADX': f"{r['adx']:.1f}",
-            'Formasyon': pat, 'Aküm': f"{r['acc_score']}/3", 'Öneri': r['rec']
-        })
-        
-    df = pd.DataFrame(data)
-    search = st.text_input("🔍 Sonuçlarda Ara", placeholder="Kod, öneri veya formasyon yazın...")
-    if search:
-        df = df[df.apply(lambda row: row.astype(str).str.contains(search.upper(), case=False).any(), axis=1)]
-        
-    def color_rec(val):
-        if 'AL' in val: return 'background-color: #dcfce7; color: #166534; font-weight: bold'
-        elif 'İZLE' in val: return 'background-color: #fef3c7; color: #92400e; font-weight: bold'
-        return 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
-        
-    st.dataframe(df.style.map(color_rec, subset=['Öneri']), use_container_width=True, height=450)
-    return df
-
-def render_detail(selected: str, results: list):
-    if not selected:
-        return
-    item = next((r for r in results if r['symbol'] == selected), None)
-    if not item:
-        return
-        
-    st.divider()
-    st.subheader(f"🔍 {selected} Detaylı Analiz")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("💰 Fiyat", f"{item['price']:.2f} TL", f"{item['change']:+.2f}%")
-    c2.metric("⭐ Puan", item['score'])
-    c3.metric("📊 RSI", f"{item['rsi']:.1f}")
-    c4.metric("📈 ADX", f"{item['adx']:.1f}")
-    c5.metric("🎯 Öneri", item['rec'])
-    
-    colA, colB = st.columns(2)
-    with colA:
-        st.markdown(f"**📐 Seviyeler**\n🔴 Direnç: `{item['levels']['resistance']:.2f}`\n🟢 Destek: `{item['levels']['support']:.2f}`")
-        st.markdown(f"**📦 Akümülasyon:** `{item['acc_score']}/3`")
-    with colB:
-        if item['patterns']:
-            for p in item['patterns']: st.success(f"✅ {p}")
-        else:
-            st.info("Belirgin formasyon tespit edilmedi")
-            
-    st.plotly_chart(create_chart(item['df'], selected, item['levels']), use_container_width=True)
+        return {"symbols": selected, "config": config, "scan": scan_btn}
 
 # =====================================================
 # 🚀 ANA UYGULAMA
 # =====================================================
 def main():
-    st.markdown(f'<div style="text-align:center;font-size:1.8rem;font-weight:bold;color:#1f77b4;padding:1rem;">📊 BIST TEKNİK ANALİZ DASHBOARD v{__version__}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🚀 BIST TrendScout Pro v2.1</div>', unsafe_allow_html=True)
+    st.caption("Gelişmiş Hacim Patlaması + Momentum + ADX Tarama Sistemi")
     
-    if 'results' not in st.session_state: st.session_state.results = None
-    if 'scan_done' not in st.session_state: st.session_state.scan_done = False
+    if 'results' not in st.session_state:
+        st.session_state.results = None
     
     settings = render_sidebar()
-    if not settings['symbols']:
-        return
-
-    if settings['scan']:
-        with st.status("⏳ Tarama başlatılıyor...", expanded=True) as status:
+    
+    if settings["scan"]:
+        with st.status("🔄 Tarama başlatılıyor...", expanded=True) as status:
             pb = st.progress(0)
             txt = st.empty()
             
-            def cb(done, total, fail, ok):
+            def cb(done, total, found):
                 pb.progress(done / total)
-                txt.text(f"📊 Tarandı: {done}/{total} | ✅ Uygun: {ok} | ❌ Başarısız: {fail}")
-                
-            criteria = {'min_score': settings['min_score'], 'max_rsi': settings['max_rsi']}
+                txt.text(f"📊 Tarandı: {done}/{total} | ✅ Bulundu: {found}")
+            
             start = time.time()
-            res = scan_stocks(settings['symbols'], criteria, cb)
+            results = run_scan(settings["symbols"], settings["config"], cb)
             elapsed = time.time() - start
             
-            st.session_state.results = res
-            st.session_state.scan_done = True
-            status.update(label=f"✅ Tamamlandı! {len(res)} hisse bulundu. ({elapsed:.1f} sn)", state="complete", expanded=False)
+            st.session_state.results = results
+            status.update(label=f"✅ Tamamlandı! {len(results)} hisse bulundu. ({elapsed:.1f} sn)", state="complete", expanded=False)
             st.rerun()
-
-    if st.session_state.scan_done and st.session_state.results is not None:
-        res = st.session_state.results
+    
+    # Sonuçları göster
+    if st.session_state.results is not None:
+        results = st.session_state.results
         st.divider()
         
+        # Özet
         c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Taranan", len(settings['symbols']))
-        c2.metric("✅ Uygun", len(res))
-        c3.metric("🎯 Ort. Puan", f"{np.mean([r['score'] for r in res]):.1f}" if res else "-")
+        c1.metric("📈 Taranan Hisse", len(settings["symbols"]))
+        c2.metric("✅ Kriterlere Uyan", len(results))
+        c3.metric("🎯 Ort. ADX", f"{np.mean([r['ADX'] for r in results]):.1f}" if results else "-")
         
-        df = render_results(res)
-        if not df.empty:
+        # Tablo
+        st.subheader("🏆 Tarama Sonuçları")
+        
+        if not results:
+            st.info("⚠️ Kriterlere uygun hisse bulunamadı. Ayarları gevşetmeyi deneyin.")
+        else:
+            # DataFrame hazırla
+            data = [{k: v for k, v in r.items() if k != "df"} for r in results]
+            df = pd.DataFrame(data)
+            
+            # Renklendirme
+            def color_trend(val):
+                if "🔥" in val: return 'color: #dc2626; font-weight: bold'
+                elif "📈" in val: return 'color: #2563eb; font-weight: bold'
+                return 'color: #f59e0b; font-weight: bold'
+            
+            styled = df.style.map(color_trend, subset=['Trend'])
+            st.dataframe(styled, use_container_width=True, height=400)
+            
+            # CSV İndir
+            csv = df.drop(columns=["df"], errors='ignore').to_csv(index=False, encoding='utf-8-sig')
+            st.download_button("📥 CSV İndir", csv, file_name=f"trendscout_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+            
+            # JSON Kaydet
+            if st.button("💾 JSON Olarak Kaydet"):
+                filename = save_results([{k: v for k, v in r.items() if k != "df"} for r in results])
+                st.success(f"✅ Kaydedildi: {filename}")
+            
+            # Detaylı Grafik
+            st.divider()
             col1, col2 = st.columns([3, 1])
             with col1:
-                sel = st.selectbox("🔍 Detaylı İncele", df['Hisse'].tolist())
+                selected = st.selectbox("🔍 Grafik İçin Hisse Seçin", df["Hisse"].tolist())
             with col2:
-                csv = df.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button("📥 CSV İndir", csv, file_name=f"bist_tarama_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
-            render_detail(sel, res)
+                if st.button("📊 Grafiği Göster", use_container_width=True):
+                    pass  # Otomatik gösterilecek
             
+            if selected:
+                item = next((r for r in results if r["Hisse"] == selected), None)
+                if item and "df" in item:
+                    st.plotly_chart(create_chart(item["df"], selected), use_container_width=True)
+                    
+                    # Detay Bilgileri
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("💰 Fiyat", f"{item['Fiyat']} TL")
+                    c2.metric("📊 RSI", item["RSI"])
+                    c3.metric("🚀 Momentum", item["Momentum"])
+                    c4.metric("📈 ADX", item["ADX"])
+    
+    # Footer
     st.divider()
-    st.caption("⚠️ Bu analizler bilgilendirme amaçlıdır. Yatırım tavsiyesi değildir. Veriler 15-60 dk gecikmeli olabilir.")
+    st.caption("⚠️ Bu analizler bilgilendirme amaçlıdır. Yatırım tavsiyesi değildir. Veriler TradingView altyapısından alınır.")
 
 if __name__ == "__main__":
     main()
