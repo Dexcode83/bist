@@ -1,6 +1,6 @@
 # =====================================================
-# 🚀 BIST SINIRSIZ TEKNİK ANALİZ DASHBOARD v4.0
-# Streamlit + Plotly + Yahoo Finance
+# 🚀 BIST SINIRSIZ TEKNİK ANALİZ DASHBOARD v5.0
+# Streamlit + Plotly + Yahoo Finance + bistpy
 # =====================================================
 # Çalıştırma: streamlit run app.py
 # =====================================================
@@ -13,8 +13,6 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 import ta
 from scipy import signal
-import ssl
-from urllib import request
 import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,35 +31,44 @@ st.markdown("""
     .bull { color: #22c55e; font-weight: bold; }
     .bear { color: #ef4444; font-weight: bold; }
     .neutral { color: #f59e0b; font-weight: bold; }
+    .status-box { padding: 10px; border-radius: 5px; margin: 10px 0; }
 </style>
 """, unsafe_allow_html=True)
 
 # =====================================================
-# 🔄 VERİ ÇEKME (YEDEKSİZ)
+# 🔄 SEMBOL ÇEKME (bistpy İLE)
 # =====================================================
 @st.cache_data(ttl=3600)
 def get_bist_hisseleri():
-    """Sadece İş Yatırım'dan canlı liste çeker. Başarısız olursa boş döner."""
-    url = "https://www.isyatirim.com.tr/tr-tr/analiz/hisse/Sayfalar/Temel-Degerler-Ve-Oranlar.aspx"
+    """bistpy kullanarak tüm aktif BIST hisselerini çeker"""
     try:
-        context = ssl._create_unverified_context()
-        req = request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        html = request.urlopen(req, context=context, timeout=30).read()
-        tablolar = pd.read_html(html, decimal=",", thousands=".")
-        for t in tablolar:
-            if "Kod" in t.columns:
-                kodlar = t["Kod"].dropna().astype(str).str.strip().tolist()
-                return [f"{k}.IS" for k in kodlar if len(k.strip()) >= 3 and k.strip() != 'Kod']
+        from bistpy import Bistpy
+        bp = Bistpy()
+        df = bp.get_stock_list()
+        
+        # Sütun adını dinamik bul (Kod, Symbol veya ilk sütun)
+        col_name = 'Kod' if 'Kod' in df.columns else 'Symbol' if 'Symbol' in df.columns else df.columns[0]
+        
+        # Temizle ve .IS ekle
+        symbols = df[col_name].dropna().astype(str).str.strip().unique()
+        valid_symbols = [f"{s}.IS" for s in symbols if len(s) >= 2 and s.isalnum()]
+        
+        return valid_symbols
+    except ImportError:
+        st.error("❌ 'bistpy' kütüphanesi yüklü değil. Terminalde `pip install bistpy` çalıştırın.")
         return []
     except Exception as e:
+        st.error(f"❌ bistpy bağlantı hatası: {e}")
         return []
 
 @st.cache_data(ttl=300)
 def fetch_stock_data(symbol, period='6mo'):
+    """Yahoo Finance'den teknik analiz verisi çeker"""
     try:
         df = yf.Ticker(symbol).history(period=period, interval='1d')
         if df.empty or len(df) < 30: return None
-        if not all(col in df.columns for col in ['Open','High','Low','Close','Volume']): return None
+        required = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if not all(col in df.columns for col in required): return None
         return df
     except:
         return None
@@ -208,27 +215,26 @@ def render_sidebar():
         max_rsi = st.slider("Max RSI", 30, 100, 75)
         
         st.divider()
-        st.subheader("📋 Hisse Listesi")
+        st.subheader("📋 Hisse Listesi (bistpy)")
         
-        # Cache temizleme & yenileme butonu
         if st.button("🔄 Listeyi & Cache'i Yenile", use_container_width=True):
             st.cache_data.clear()
             st.session_state.pop('results', None)
             st.session_state.pop('scan_done', None)
             st.rerun()
             
-        all_sym = get_bist_hisseleri()
+        with st.spinner("📡 bistpy ile hisse listesi çekiliyor..."):
+            all_sym = get_bist_hisseleri()
         
         if not all_sym:
-            st.error("⚠️ İş Yatırım'dan liste alınamadı.\nLütfen internet bağlantınızı kontrol edin ve 'Yenile' butonuna basın.")
+            st.error("⚠️ Liste boş. `pip install bistpy` komutunu çalıştırıp sayfayı yenileyin.")
             return {'min_score': min_sc, 'max_rsi': max_rsi, 'symbols': [], 'scan': False}
             
-        st.success(f"✅ {len(all_sym)} hisse yüklendi")
+        st.success(f"✅ {len(all_sym)} aktif hisse yüklendi")
         
         search = st.text_input("Hisse Ara", placeholder="örn: CGCAM")
         filtered = [s for s in all_sym if search.upper() in s.replace('.IS','')] if search else all_sym
         
-        # Varsayılan seçim: Tümünü seçili getir
         default_sel = st.session_state.get('sel_syms', all_sym)
         selected = st.multiselect("Seçili Hisseler", all_sym, default=default_sel)
         
@@ -245,7 +251,7 @@ def render_sidebar():
         st.session_state.sel_syms = selected
         scan = st.button("🚀 SINIRSIZ TARAMAYI BAŞLAT", type="primary", use_container_width=True)
         
-        st.caption("💡 400+ hisse ~3-5 dk sürebilir. Yahoo Finance limitleri otomatik yönetilir.")
+        st.caption("💡 bistpy verileri BIST altyapısından çeker. Yahoo Finance limitleri otomatik yönetilir.")
         return {'min_score': min_sc, 'max_rsi': max_rsi, 'symbols': selected, 'scan': scan}
 
 # =====================================================
@@ -259,7 +265,6 @@ def main():
     
     settings = render_sidebar()
     
-    # Liste boşsa dur
     if not settings['symbols']:
         st.info("👈 Sol menüden hisse listesi yüklenene kadar bekleyin veya 'Yenile' butonuna basın.")
         return
