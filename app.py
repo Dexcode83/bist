@@ -1,5 +1,5 @@
 # =====================================================
-# 🚀 BIST SINIRSIZ TEKNİK ANALİZ DASHBOARD v3.0
+# 🚀 BIST SINIRSIZ TEKNİK ANALİZ DASHBOARD v4.0
 # Streamlit + Plotly + Yahoo Finance
 # =====================================================
 # Çalıştırma: streamlit run app.py
@@ -19,7 +19,6 @@ import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import warnings
-import traceback
 
 warnings.filterwarnings('ignore')
 st.set_page_config(page_title="BIST Sınırsız Analiz", page_icon="📊", layout="wide")
@@ -30,7 +29,6 @@ st.set_page_config(page_title="BIST Sınırsız Analiz", page_icon="📊", layou
 st.markdown("""
 <style>
     .main-header { font-size: 2rem; font-weight: bold; color: #1f77b4; text-align: center; padding: 1rem; }
-    .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center; }
     .stDataFrame { font-size: 0.85rem; }
     .bull { color: #22c55e; font-weight: bold; }
     .bear { color: #ef4444; font-weight: bold; }
@@ -39,52 +37,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================
-# 🔄 CACHE & VERİ ÇEKME
+# 🔄 VERİ ÇEKME (YEDEKSİZ)
 # =====================================================
 @st.cache_data(ttl=3600)
 def get_bist_hisseleri():
+    """Sadece İş Yatırım'dan canlı liste çeker. Başarısız olursa boş döner."""
     url = "https://www.isyatirim.com.tr/tr-tr/analiz/hisse/Sayfalar/Temel-Degerler-Ve-Oranlar.aspx"
     try:
         context = ssl._create_unverified_context()
-        html = request.urlopen(url, context=context, timeout=30).read()
+        req = request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        html = request.urlopen(req, context=context, timeout=30).read()
         tablolar = pd.read_html(html, decimal=",", thousands=".")
         for t in tablolar:
             if "Kod" in t.columns:
                 kodlar = t["Kod"].dropna().astype(str).str.strip().tolist()
                 return [f"{k}.IS" for k in kodlar if len(k.strip()) >= 3 and k.strip() != 'Kod']
-    except:
-        pass
-    return _yedek_liste()
-
-@st.cache_data(ttl=3600)
-def _yedek_liste():
-    return [
-        'AKBNK.IS', 'ASELS.IS', 'BIMAS.IS', 'EREGL.IS', 'FROTO.IS', 'GARAN.IS', 'HALKB.IS', 'ISCTR.IS',
-        'KCHOL.IS', 'KOZAL.IS', 'KRDMD.IS', 'PETKM.IS', 'PGSUS.IS', 'SAHOL.IS', 'SISE.IS', 'TCELL.IS',
-        'THYAO.IS', 'TKFEN.IS', 'TUPRS.IS', 'ULKER.IS', 'VAKBN.IS', 'YKBNK.IS', 'HEKTS.IS', 'MAVI.IS',
-        'SOKM.IS', 'DOHOL.IS', 'AFYON.IS', 'AKCNS.IS', 'AKFGY.IS', 'AKGRT.IS', 'AKSEN.IS', 'ALBRK.IS',
-        'ALCAR.IS', 'ALFAS.IS', 'ALGYO.IS', 'ANACM.IS', 'ANSGR.IS', 'ARCLK.IS', 'ARSAN.IS', 'ASTOR.IS',
-        'AYGAZ.IS', 'BAGFS.IS', 'BASGZ.IS', 'BAYRK.IS', 'BERA.IS', 'BESKT.IS', 'BIZIM.IS', 'BOLUC.IS',
-        'BOMAP.IS', 'BRISA.IS', 'BRMEN.IS', 'BRYAT.IS', 'BUCIM.IS', 'CELHA.IS', 'CEMTS.IS', 'CIMSA.IS',
-        'COSMO.IS', 'CRDFA.IS', 'CRMSN.IS', 'DENGE.IS', 'DERIM.IS', 'DEVA.IS', 'DGGYO.IS', 'DITAS.IS',
-        'DOAS.IS', 'DOGU.IS', 'DRHMA.IS', 'ECILC.IS', 'ECZYT.IS', 'EGGUB.IS', 'EGPRO.IS', 'EKGYO.IS',
-        'EMKEL.IS', 'ERBOS.IS', 'ERCIS.IS', 'ERUHC.IS', 'ESCOM.IS', 'ESGBA.IS', 'ETILR.IS', 'EUPWR.IS',
-        'FENER.IS', 'FINBN.IS', 'FLAP.IS', 'FONET.IS', 'FORMT.IS', 'GOODY.IS', 'GOZDE.IS', 'GSDDE.IS',
-        'GUBRF.IS', 'HUBVC.IS', 'IHEVA.IS', 'IHGZT.IS', 'IHLGM.IS', 'IHLAS.IS', 'IKGYO.IS', 'INDES.IS',
-        'INFOP.IS', 'INGRM.IS', 'ISDMR.IS', 'ISFIN.IS', 'ISGYO.IS', 'ISKUR.IS', 'ISMEN.IS', 'IZDEM.IS',
-        'IZMDC.IS', 'IZTAR.IS', 'JANTS.IS', 'KAREL.IS', 'KARSN.IS', 'KATSN.IS', 'KAYA.IS', 'KCAER.IS',
-        'KENT.IS', 'KERVT.IS', 'KLRHO.IS', 'KLSER.IS', 'KONTR.IS', 'KONYA.IS', 'KOZAA.IS', 'KRNVR.IS',
-        'KUTPO.IS', 'KUYAS.IS', 'KZLBM.IS', 'LIDER.IS', 'LINKA.IS', 'LOGMA.IS', 'LUXKM.IS', 'MAKTK.IS',
-        'MARTI.IS', 'MATAM.IS', 'MERKO.IS', 'MESYK.IS', 'METUR.IS', 'MGROS.IS', 'MIATK.IS', 'MONDI.IS',
-        'MPARK.IS', 'NETAS.IS', 'NIBAS.IS', 'NUHCM.IS', 'NUHCF.IS', 'OYLUM.IS', 'OYAKC.IS', 'OYPGY.IS',
-        'PENGD.IS', 'PERGS.IS', 'PLTGG.IS', 'PNSUT.IS', 'POLTK.IS', 'POLHO.IS', 'PRKAB.IS', 'PRKME.IS',
-        'PSDTC.IS', 'PSTIL.IS', 'QNBFL.IS', 'REYDR.IS', 'ROTO.IS', 'SANKO.IS', 'SANFM.IS', 'SARDE.IS',
-        'SELEC.IS', 'SELSA.IS', 'SKBNK.IS', 'SMRTG.IS', 'SODA.IS', 'SONME.IS', 'SSMEN.IS', 'TATGD.IS',
-        'TEFAS.IS', 'TGBFB.IS', 'TKNSA.IS', 'TLMAN.IS', 'TOSTON.IS', 'TRCAS.IS', 'TRGYO.IS', 'TRKCM.IS',
-        'TTRAK.IS', 'TUCLK.IS', 'TURSG.IS', 'UBAVS.IS', 'UCLAS.IS', 'ULUUN.IS', 'UNYEC.IS', 'USAK.IS',
-        'UTPYA.IS', 'VAKIF.IS', 'VESBE.IS', 'VKFYO.IS', 'VKING.IS', 'YATAS.IS', 'YGYO.IS', 'YKSLN.IS',
-        'ZOREN.IS', 'ZPHLB.IS'
-    ]
+        return []
+    except Exception as e:
+        return []
 
 @st.cache_data(ttl=300)
 def fetch_stock_data(symbol, period='6mo'):
@@ -236,16 +206,30 @@ def render_sidebar():
         st.header("⚙️ Tarama Ayarları")
         min_sc = st.slider("Min Teknik Puan", 0, 100, 55)
         max_rsi = st.slider("Max RSI", 30, 100, 75)
-        period = st.selectbox("Periyot", ['1mo','3mo','6mo','1y'], index=2)
         
         st.divider()
-        st.subheader("📋 Hisse Seçimi")
+        st.subheader("📋 Hisse Listesi")
+        
+        # Cache temizleme & yenileme butonu
+        if st.button("🔄 Listeyi & Cache'i Yenile", use_container_width=True):
+            st.cache_data.clear()
+            st.session_state.pop('results', None)
+            st.session_state.pop('scan_done', None)
+            st.rerun()
+            
         all_sym = get_bist_hisseleri()
+        
+        if not all_sym:
+            st.error("⚠️ İş Yatırım'dan liste alınamadı.\nLütfen internet bağlantınızı kontrol edin ve 'Yenile' butonuna basın.")
+            return {'min_score': min_sc, 'max_rsi': max_rsi, 'symbols': [], 'scan': False}
+            
+        st.success(f"✅ {len(all_sym)} hisse yüklendi")
+        
         search = st.text_input("Hisse Ara", placeholder="örn: CGCAM")
-        
         filtered = [s for s in all_sym if search.upper() in s.replace('.IS','')] if search else all_sym
-        default_sel = st.session_state.get('sel_syms', all_sym)
         
+        # Varsayılan seçim: Tümünü seçili getir
+        default_sel = st.session_state.get('sel_syms', all_sym)
         selected = st.multiselect("Seçili Hisseler", all_sym, default=default_sel)
         
         c1, c2 = st.columns(2)
@@ -261,9 +245,8 @@ def render_sidebar():
         st.session_state.sel_syms = selected
         scan = st.button("🚀 SINIRSIZ TARAMAYI BAŞLAT", type="primary", use_container_width=True)
         
-        st.divider()
-        st.caption("⚠️ Yahoo Finance limitleri nedeniyle 400+ hisse ~3-5 dk sürebilir. Sabırlı olun.")
-        return {'min_score': min_sc, 'max_rsi': max_rsi, 'period': period, 'symbols': selected, 'scan': scan}
+        st.caption("💡 400+ hisse ~3-5 dk sürebilir. Yahoo Finance limitleri otomatik yönetilir.")
+        return {'min_score': min_sc, 'max_rsi': max_rsi, 'symbols': selected, 'scan': scan}
 
 # =====================================================
 # 🚀 ANA UYGULAMA
@@ -276,6 +259,11 @@ def main():
     
     settings = render_sidebar()
     
+    # Liste boşsa dur
+    if not settings['symbols']:
+        st.info("👈 Sol menüden hisse listesi yüklenene kadar bekleyin veya 'Yenile' butonuna basın.")
+        return
+
     if settings['scan']:
         with st.status("🔄 Tarama başlatılıyor...", expanded=True) as status:
             pb = st.progress(0)
@@ -289,10 +277,6 @@ def main():
             crit = {'min_score': settings['min_score'], 'max_rsi': settings['max_rsi']}
             syms = settings['symbols']
             
-            if not syms:
-                st.warning("⚠️ Lütfen en az 1 hisse seçin!")
-                return
-                
             start = time.time()
             res = scan_stocks(syms, crit, cb)
             elapsed = time.time() - start
@@ -306,16 +290,14 @@ def main():
         res = st.session_state.results
         st.divider()
         
-        # Özet
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("📈 Toplam Taranan", len(settings['symbols']))
         c2.metric("✅ Kriterlere Uyan", len(res))
         c3.metric("🎯 Ortalama Puan", f"{np.mean([r['score'] for r in res]):.1f}" if res else "-")
         c4.metric("⏱️ Süre", f"{(time.time() - (st.session_state.get('last_start', time.time()))):.1f} sn")
         
-        # Filtre & Tablo
         st.subheader("🏆 Sonuçlar")
-        search_res = st.text_input("🔍 Sonuçlarda Ara", placeholder="Hisse kodu veya öneri yazın...")
+        search_res = st.text_input("🔍 Sonuçlarda Ara", placeholder="Hisse kodu, öneri veya formasyon yazın...")
         
         data = []
         for r in res:
@@ -336,7 +318,6 @@ def main():
         styled = df.style.map(color_rec, subset=['Öneri'])
         st.dataframe(styled, use_container_width=True, height=450)
         
-        # CSV & Detay
         colA, colB = st.columns([3, 1])
         with colA:
             sel_sym = st.selectbox("🔍 Detaylı İncele", df['Hisse'].tolist() if not df.empty else [])
@@ -363,11 +344,10 @@ def main():
                 with cc2:
                     if r['patterns']:
                         for p in r['patterns']: st.success(f"✅ {p}")
-                    else: st.info("Formasyon yok")
+                    else: st.info("Belirgin formasyon yok")
                     
                 st.plotly_chart(create_chart(r['df'], sel_sym, r['levels']), use_container_width=True)
                 
-    # Footer
     st.divider()
     st.caption("⚠️ Yapay zeka analizi. Yatırım tavsiyesi değildir. Veriler 15-60 dk gecikmeli olabilir.")
 
