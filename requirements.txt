@@ -1,10 +1,8 @@
-bistpy
-streamlit
-pandas
-numpy
-plotly
-yfinance
-ta
-scipy
-lxml
-html5lib
+streamlit==1.32.0
+pandas==2.2.1
+numpy==1.26.4
+plotly==5.19.0
+tvdatafeed @ git+https://github.com/rongardF/tvdatafeed
+tqdm
+tabulate
+openpyxl
