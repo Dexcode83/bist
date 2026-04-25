@@ -48,7 +48,6 @@ st.markdown("""
 
 # BIST hisse listesi
 BIST_HISSELER = [
-    
     "A1CAP.IS", "A1YEN.IS", "ACSEL.IS", "ADEL.IS", "ADESE.IS", "ADGYO.IS", "AEFES.IS", "AFYON.IS", "AGESA.IS", "AGHOL.IS",
     "AGROT.IS", "AGYO.IS", "AHGAZ.IS", "AHSGY.IS", "AKBNK.IS", "AKCNS.IS", "AKENR.IS", "AKFGY.IS", "AKFIS.IS", "AKFYE.IS",
     "AKGRT.IS", "AKMGY.IS", "AKSA.IS", "AKSEN.IS", "AKSGY.IS", "AKSUE.IS", "AKYHO.IS", "ALARK.IS", "ALBRK.IS", "ALCAR.IS",
@@ -165,7 +164,6 @@ def fetch_stock_data(symbol, period="3mo"):
             return None
         return df
     except Exception as e:
-        st.warning(f"Veri çekilemedi {symbol}: {str(e)}")
         return None
 
 def analyze_stock(symbol, params):
@@ -183,7 +181,6 @@ def analyze_stock(symbol, params):
     
     # Son gün verileri
     last = df.iloc[-1]
-    prev = df.iloc[-2]
     
     # Hacim kontrolü
     volume_ratio = last['Volume_Ratio']
@@ -291,6 +288,7 @@ if analyze_btn:
             result = analyze_stock(symbol, params)
             if result:
                 results.append(result)
+            time.sleep(0.05)  # Rate limiting
         
         progress_bar.empty()
         
@@ -308,15 +306,28 @@ if 'results' in st.session_state and st.session_state.results is not None:
     # Tablo
     st.subheader("📋 Taranan Hisseler")
     
-    # Renklendirme
+    # Renklendirme fonksiyonu - DÜZELTİLDİ
     def color_trend(val):
-        if 'Güçlü' in val:
-            return 'background-color: #00ff0044'
-        elif 'Yeni' in val:
-            return 'background-color: #ffa50044'
-        return 'background-color: #ff444444'
+        """Trend değerine göre renk döndür"""
+        if 'Güçlü' in str(val):
+            return 'background-color: #90EE9044'
+        elif 'Yeni' in str(val):
+            return 'background-color: #FFD70044'
+        return 'background-color: #FFB6C144'
     
-    styled_df = df_results.style.applymap(color_trend, subset=['Trend'])
+    # Stil uygulama - pandas 2.0+ uyumlu
+    try:
+        styled_df = df_results.style.map(color_trend, subset=['Trend'])
+    except AttributeError:
+        # Eski pandas versiyonları için alternatif
+        def highlight_trend(row):
+            if 'Güçlü' in str(row['Trend']):
+                return ['background-color: #90EE9044'] * len(row)
+            elif 'Yeni' in str(row['Trend']):
+                return ['background-color: #FFD70044'] * len(row)
+            return ['background-color: #FFB6C144'] * len(row)
+        styled_df = df_results.style.apply(highlight_trend, axis=1)
+    
     st.dataframe(styled_df, use_container_width=True, height=400)
     
     # İstatistikler
@@ -324,7 +335,8 @@ if 'results' in st.session_state and st.session_state.results is not None:
     with col1:
         st.metric("Toplam Hisseler", len(df_results))
     with col2:
-        st.metric("Güçlü Trend", len(df_results[df_results['Trend'].str.contains('Güçlü')]))
+        guclu_sayisi = len(df_results[df_results['Trend'].str.contains('Güçlü', na=False)])
+        st.metric("Güçlü Trend", guclu_sayisi)
     with col3:
         st.metric("Ortalama RSI", round(df_results['RSI'].mean(), 1))
     with col4:
@@ -341,18 +353,21 @@ if 'results' in st.session_state and st.session_state.results is not None:
     
     # Detaylı grafik
     st.subheader("📈 Detaylı Analiz")
-    selected = st.selectbox("Hisse seçin:", df_results['Hisse'].tolist())
-    
-    if selected:
-        symbol = f"{selected}.IS"
-        df = fetch_stock_data(symbol, period="3mo")
-        if df is not None:
-            # Göstergeleri ekle
-            df['RSI'] = calculate_rsi(df['Close'], 14)
-            df['ADX'] = calculate_adx(df, 14)
-            
-            fig = create_chart(symbol, df)
-            st.plotly_chart(fig, use_container_width=True)
+    if len(df_results) > 0:
+        selected = st.selectbox("Hisse seçin:", df_results['Hisse'].tolist())
+        
+        if selected:
+            symbol = f"{selected}.IS"
+            df = fetch_stock_data(symbol, period="3mo")
+            if df is not None:
+                # Göstergeleri ekle
+                df['RSI'] = calculate_rsi(df['Close'], 14)
+                df['ADX'] = calculate_adx(df, 14)
+                
+                fig = create_chart(symbol, df)
+                st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Detaylı analiz için hisse bulunamadı.")
 
 # Footer
 st.markdown("---")
