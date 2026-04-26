@@ -48,6 +48,7 @@ st.markdown("""
 
 # BIST hisse listesi
 BIST_HISSELER = [
+    
     "A1CAP.IS", "A1YEN.IS", "ACSEL.IS", "ADEL.IS", "ADESE.IS", "ADGYO.IS", "AEFES.IS", "AFYON.IS", "AGESA.IS", "AGHOL.IS",
     "AGROT.IS", "AGYO.IS", "AHGAZ.IS", "AHSGY.IS", "AKBNK.IS", "AKCNS.IS", "AKENR.IS", "AKFGY.IS", "AKFIS.IS", "AKFYE.IS",
     "AKGRT.IS", "AKMGY.IS", "AKSA.IS", "AKSEN.IS", "AKSGY.IS", "AKSUE.IS", "AKYHO.IS", "ALARK.IS", "ALBRK.IS", "ALCAR.IS",
@@ -164,6 +165,7 @@ def fetch_stock_data(symbol, period="3mo"):
             return None
         return df
     except Exception as e:
+        st.warning(f"Veri çekilemedi {symbol}: {str(e)}")
         return None
 
 def analyze_stock(symbol, params):
@@ -181,6 +183,7 @@ def analyze_stock(symbol, params):
     
     # Son gün verileri
     last = df.iloc[-1]
+    prev = df.iloc[-2]
     
     # Hacim kontrolü
     volume_ratio = last['Volume_Ratio']
@@ -288,7 +291,6 @@ if analyze_btn:
             result = analyze_stock(symbol, params)
             if result:
                 results.append(result)
-            time.sleep(0.05)  # Rate limiting
         
         progress_bar.empty()
         
@@ -306,28 +308,15 @@ if 'results' in st.session_state and st.session_state.results is not None:
     # Tablo
     st.subheader("📋 Taranan Hisseler")
     
-    # Renklendirme fonksiyonu - DÜZELTİLDİ
+    # Renklendirme
     def color_trend(val):
-        """Trend değerine göre renk döndür"""
-        if 'Güçlü' in str(val):
-            return 'background-color: #90EE9044'
-        elif 'Yeni' in str(val):
-            return 'background-color: #FFD70044'
-        return 'background-color: #FFB6C144'
+        if 'Güçlü' in val:
+            return 'background-color: #00ff0044'
+        elif 'Yeni' in val:
+            return 'background-color: #ffa50044'
+        return 'background-color: #ff444444'
     
-    # Stil uygulama - pandas 2.0+ uyumlu
-    try:
-        styled_df = df_results.style.map(color_trend, subset=['Trend'])
-    except AttributeError:
-        # Eski pandas versiyonları için alternatif
-        def highlight_trend(row):
-            if 'Güçlü' in str(row['Trend']):
-                return ['background-color: #90EE9044'] * len(row)
-            elif 'Yeni' in str(row['Trend']):
-                return ['background-color: #FFD70044'] * len(row)
-            return ['background-color: #FFB6C144'] * len(row)
-        styled_df = df_results.style.apply(highlight_trend, axis=1)
-    
+    styled_df = df_results.style.applymap(color_trend, subset=['Trend'])
     st.dataframe(styled_df, use_container_width=True, height=400)
     
     # İstatistikler
@@ -335,8 +324,7 @@ if 'results' in st.session_state and st.session_state.results is not None:
     with col1:
         st.metric("Toplam Hisseler", len(df_results))
     with col2:
-        guclu_sayisi = len(df_results[df_results['Trend'].str.contains('Güçlü', na=False)])
-        st.metric("Güçlü Trend", guclu_sayisi)
+        st.metric("Güçlü Trend", len(df_results[df_results['Trend'].str.contains('Güçlü')]))
     with col3:
         st.metric("Ortalama RSI", round(df_results['RSI'].mean(), 1))
     with col4:
@@ -353,21 +341,18 @@ if 'results' in st.session_state and st.session_state.results is not None:
     
     # Detaylı grafik
     st.subheader("📈 Detaylı Analiz")
-    if len(df_results) > 0:
-        selected = st.selectbox("Hisse seçin:", df_results['Hisse'].tolist())
-        
-        if selected:
-            symbol = f"{selected}.IS"
-            df = fetch_stock_data(symbol, period="3mo")
-            if df is not None:
-                # Göstergeleri ekle
-                df['RSI'] = calculate_rsi(df['Close'], 14)
-                df['ADX'] = calculate_adx(df, 14)
-                
-                fig = create_chart(symbol, df)
-                st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Detaylı analiz için hisse bulunamadı.")
+    selected = st.selectbox("Hisse seçin:", df_results['Hisse'].tolist())
+    
+    if selected:
+        symbol = f"{selected}.IS"
+        df = fetch_stock_data(symbol, period="3mo")
+        if df is not None:
+            # Göstergeleri ekle
+            df['RSI'] = calculate_rsi(df['Close'], 14)
+            df['ADX'] = calculate_adx(df, 14)
+            
+            fig = create_chart(symbol, df)
+            st.plotly_chart(fig, use_container_width=True)
 
 # Footer
 st.markdown("---")
@@ -376,184 +361,3 @@ st.markdown("""
     <p>BIST TrendScout Pro v2.1 | Veri kaynağı: Yahoo Finance</p>
 </div>
 """, unsafe_allow_html=True)
-
-bu kodum var  degsıtırmeden gelsımesını ıstıyorum 
-
-# =========================================
-# 🚀 BIST TrendScout PRO v3.5 FULL SİSTEM
-# =========================================
-
-!pip install git+https://github.com/rongardF/tvdatafeed pandas_ta tqdm requests
-
-import pandas as pd
-import pandas_ta as ta
-from tvDatafeed import TvDatafeed, Interval
-from tqdm import tqdm
-import requests
-import json
-
-tv = TvDatafeed()
-
-# =========================================
-# ⚙️ AYARLAR
-# =========================================
-N_BARS = 100
-
-RSI_MIN = 55
-ADX_MIN = 20
-VOLUME_Z_MIN = 2
-
-# =========================================
-# 📊 TÜM BIST HİSSELERİ
-# =========================================
-def bist_tum_hisseler():
-    url = "https://scanner.tradingview.com/turkey/scan"
-
-    payload = {
-        "filter": [
-            {"left": "exchange", "operation": "equal", "right": "BIST"}
-        ],
-        "options": {"lang": "tr"},
-        "symbols": {"query": {"types": []}, "tickers": []},
-        "columns": ["name"]
-    }
-
-    r = requests.post(url, json=payload)
-    data = r.json()
-
-    hisseler = [item["d"][0].replace("BIST:", "") for item in data["data"]]
-
-    # temizle
-    hisseler = [h.strip().upper() for h in hisseler if len(h) <= 5]
-
-    return list(set(hisseler))
-
-# =========================================
-# 📈 VERİ ÇEKME
-# =========================================
-def get_data(symbol, interval):
-    try:
-        df = tv.get_hist(symbol=symbol, exchange="BIST", interval=interval, n_bars=N_BARS)
-        if df is None or len(df) < 50:
-            return None
-        return df
-    except:
-        return None
-
-# =========================================
-# 📊 GÖSTERGELER
-# =========================================
-def add_indicators(df):
-    df["RSI"] = ta.rsi(df["close"], length=14)
-    df["ADX"] = ta.adx(df["high"], df["low"], df["close"])["ADX_14"]
-    df["EMA50"] = ta.ema(df["close"], length=50)
-    df["ROC"] = ta.roc(df["close"], length=10)
-
-    df["CMF"] = ta.cmf(df["high"], df["low"], df["close"], df["volume"])
-
-    df["VOL_MEAN"] = df["volume"].rolling(20).mean()
-    df["VOL_STD"] = df["volume"].rolling(20).std()
-    df["VOL_Z"] = (df["volume"] - df["VOL_MEAN"]) / df["VOL_STD"]
-
-    df["HH20"] = df["high"].rolling(20).max()
-
-    return df
-
-# =========================================
-# ⚡ HIZLI ÖN FİLTRE
-# =========================================
-def hizli_filtre(symbol):
-    df = get_data(symbol, Interval.in_daily)
-    if df is None:
-        return False
-
-    df["EMA20"] = df["close"].ewm(span=20).mean()
-
-    return df["close"].iloc[-1] > df["EMA20"].iloc[-1]
-
-# =========================================
-# 🤖 AI YORUM
-# =========================================
-def ai_yorum(row):
-    yorum = []
-
-    if row["RSI"] > 60:
-        yorum.append("Momentum güçlü")
-    if row["ADX"] > 25:
-        yorum.append("Trend kuvvetli")
-    if row["CMF"] > 0:
-        yorum.append("Para girişi var")
-    if row["VOL_Z"] > 2:
-        yorum.append("Hacim patlaması")
-
-    return " | ".join(yorum)
-
-# =========================================
-# 🧠 ANALİZ
-# =========================================
-def analyze_symbol(symbol):
-    df_d = get_data(symbol, Interval.in_daily)
-    df_4h = get_data(symbol, Interval.in_4_hour)
-
-    if df_d is None or df_4h is None:
-        return None
-
-    df_d = add_indicators(df_d)
-    df_4h = add_indicators(df_4h)
-
-    d = df_d.iloc[-1]
-    h4 = df_4h.iloc[-1]
-
-    # şartlar
-    trend = d["close"] > d["EMA50"]
-    rsi = d["RSI"] > RSI_MIN
-    adx = d["ADX"] > ADX_MIN
-    volume = d["VOL_Z"] > VOLUME_Z_MIN
-    para = d["CMF"] > 0
-    breakout = d["close"] > df_d["HH20"].iloc[-2]
-
-    mtf = h4["RSI"] > 50 and h4["close"] > h4["EMA50"]
-
-    if trend and rsi and adx and volume and para and breakout and mtf:
-        return {
-            "Hisse": symbol,
-            "Fiyat": round(d["close"], 2),
-            "RSI": round(d["RSI"], 2),
-            "ADX": round(d["ADX"], 2),
-            "Hacim Skor": round(d["VOL_Z"], 2),
-            "AI Yorum": ai_yorum(d)
-        }
-
-    return None
-
-# =========================================
-# 🚀 ANA ÇALIŞMA
-# =========================================
-def run():
-    hisseler = bist_tum_hisseler()
-    print(f"Toplam hisse: {len(hisseler)}")
-
-    results = []
-
-    for h in tqdm(hisseler):
-        # ⚡ hızlı eleme
-        if not hizli_filtre(h):
-            continue
-
-        res = analyze_symbol(h)
-        if res:
-            results.append(res)
-
-    # kaydet
-    with open("pro_sinyaller.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-
-    print(f"\n🔥 {len(results)} adet PRO sinyal bulundu\n")
-
-    for r in results:
-        print(r)
-
-# =========================================
-# ▶️ BAŞLAT
-# =========================================
-run()
