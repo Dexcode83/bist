@@ -1,363 +1,264 @@
-"""
-BIST TrendScout Pro v2.1 - Web Arayüzü (yfinance versiyonu)
-"""
+# =========================================
+# 📊 BIST TrendScort Pro v2.2 (pandas-ta içermeyen sürüm)
+# 📦 Gerekli kütüphaneler: pip install streamlit pandas numpy yfinance plotly
+# ▶️ Çalıştırma: streamlit run app.py
+# =========================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
 import time
+from datetime import datetime
 
-# Sayfa yapılandırması
-st.set_page_config(
-    page_title="BIST TrendScout Pro",
-    page_icon="📈",
-    layout="wide"
-)
+# Sayfa Konfigürasyonu
+st.set_page_config(page_title="BIST TrendScort Pro", layout="wide", page_icon="📈")
 
-# CSS
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        text-align: center;
-        margin-bottom: 2rem;
-        color: white;
-    }
-    .metric-card {
-        background: #f0f2f6;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Başlık
-st.markdown("""
-<div class="main-header">
-    <h1>🚀 BIST TrendScout Pro v2.1</h1>
-    <p>Gelişmiş Teknik Analiz ve Hisse Tarama Sistemi</p>
-</div>
-""", unsafe_allow_html=True)
-
-# BIST hisse listesi
-BIST_HISSELER = [
-    
-    "A1CAP.IS", "A1YEN.IS", "ACSEL.IS", "ADEL.IS", "ADESE.IS", "ADGYO.IS", "AEFES.IS", "AFYON.IS", "AGESA.IS", "AGHOL.IS",
-    "AGROT.IS", "AGYO.IS", "AHGAZ.IS", "AHSGY.IS", "AKBNK.IS", "AKCNS.IS", "AKENR.IS", "AKFGY.IS", "AKFIS.IS", "AKFYE.IS",
-    "AKGRT.IS", "AKMGY.IS", "AKSA.IS", "AKSEN.IS", "AKSGY.IS", "AKSUE.IS", "AKYHO.IS", "ALARK.IS", "ALBRK.IS", "ALCAR.IS",
-    "ALCTL.IS", "ALFAS.IS", "ALGYO.IS", "ALKA.IS", "ALKIM.IS", "ALKLC.IS", "ALTINS1.IS", "ALTNY.IS", "ALVES.IS", "ANELE.IS",
-    "ANGEN.IS", "ANHYT.IS", "ANSGR.IS", "ARASE.IS", "ARCLK.IS", "ARDYZ.IS", "ARENA.IS", "ARMGD.IS", "ARSAN.IS", "ARTMS.IS",
-    "ARZUM.IS", "ASELS.IS", "ASGYO.IS", "ASTOR.IS", "ASUZU.IS", "ATAGY.IS", "ATAKP.IS", "ATATP.IS", "ATEKS.IS", "ATLAS.IS",
-    "ATSYH.IS", "AVGYO.IS", "AVHOL.IS", "AVOD.IS", "AVPGY.IS", "AVTUR.IS", "AYCES.IS", "AYDEM.IS", "AYEN.IS", "AYES.IS",
-    "AYGAZ.IS", "AZTEK.IS", "BAGFS.IS", "BAHKM.IS", "BAKAB.IS", "BALAT.IS", "BALSU.IS", "BANVT.IS", "BARMA.IS", "BASCM.IS",
-    "BASGZ.IS", "BAYRK.IS", "BEGYO.IS", "BERA.IS", "BEYAZ.IS", "BFREN.IS", "BIENY.IS", "BIGCH.IS", "BIGEN.IS", "BIMAS.IS",
-    "BINBN.IS", "BINHO.IS", "BIOEN.IS", "BIZIM.IS", "BJKAS.IS", "BLCYT.IS", "BMSCH.IS", "BMSTL.IS", "BNTAS.IS", "BOBET.IS",
-    "BORLS.IS", "BORSK.IS", "BOSSA.IS", "BRISA.IS", "BRKO.IS", "BRKSN.IS", "BRKVY.IS", "BRLSM.IS", "BRMEN.IS", "BRSAN.IS",
-    "BRYAT.IS", "BSOKE.IS", "BTCIM.IS", "BUCIM.IS", "BULGS.IS", "BURCE.IS", "BURVA.IS", "BVSAN.IS", "BYDNR.IS", "CANTE.IS",
-    "CASA.IS", "CATES.IS", "CCOLA.IS", "CELHA.IS", "CEMAS.IS", "CEMTS.IS", "CEMZY.IS", "CEOEM.IS", "CGCAM.IS", "CIMSA.IS",
-    "CLEBI.IS", "CMBTN.IS", "CMENT.IS", "CONSE.IS", "COSMO.IS", "CRDFA.IS", "CRFSA.IS", "CUSAN.IS", "CVKMD.IS", "CWENE.IS",
-    "DAGHL.IS", "DAGI.IS", "DAPGM.IS", "DARDL.IS", "DCTTR.IS", "DENGE.IS", "DERHL.IS", "DERIM.IS", "DESA.IS", "DESPC.IS",
-    "DEVA.IS", "DGATE.IS", "DGGYO.IS", "DGNMO.IS", "DIRIT.IS", "DITAS.IS", "DMRGD.IS", "DMSAS.IS", "DNISI.IS", "DOAS.IS",
-    "DOBUR.IS", "DOCO.IS", "DOFER.IS", "DOGUB.IS", "DOHOL.IS", "DOKTA.IS", "DSTKF.IS", "DURDO.IS", "DURKN.IS", "DYOBY.IS",
-    "DZGYO.IS", "EBEBK.IS", "ECILC.IS", "ECZYT.IS", "EDATA.IS", "EDIP.IS", "EFORC.IS", "EGEEN.IS", "EGEGY.IS", "EGEPO.IS",
-    "EGGUB.IS", "EGPRO.IS", "EGSER.IS", "EKGYO.IS", "EKIZ.IS", "EKOS.IS", "EKSUN.IS", "ELITE.IS", "EMKEL.IS", "EMNIS.IS",
-    "ENDAE.IS", "ENERY.IS", "ENJSA.IS", "ENKAI.IS", "ENSRI.IS", "ENTRA.IS", "EPLAS.IS", "ERBOS.IS", "ERCB.IS", "EREGL.IS",
-    "ERSU.IS", "ESCAR.IS", "ESCOM.IS", "ESEN.IS", "ETILR.IS", "ETYAT.IS", "EUHOL.IS", "EUKYO.IS", "EUPWR.IS", "EUREN.IS",
-    "EUYO.IS", "EYGYO.IS", "FADE.IS", "FENER.IS", "FLAP.IS", "FMIZP.IS", "FONET.IS", "FORMT.IS", "FORTE.IS", "FRIGO.IS",
-    "FROTO.IS", "FZLGY.IS", "GARAN.IS", "GARFA.IS", "GEDIK.IS", "GEDZA.IS", "GENIL.IS", "GENTS.IS", "GEREL.IS", "GESAN.IS",
-    "GIPTA.IS", "GLBMD.IS", "GLCVY.IS", "GLRMK.IS", "GLRYH.IS", "GLYHO.IS", "GMTAS.IS", "GOKNR.IS", "GOLTS.IS", "GOODY.IS",
-    "GOZDE.IS", "GRNYO.IS", "GRSEL.IS", "GRTHO.IS", "GSDDE.IS", "GSDHO.IS", "GSRAY.IS", "GUBRF.IS", "GUNDG.IS", "GWIND.IS",
-    "GZNMI.IS", "HALKB.IS", "HATEK.IS", "HATSN.IS", "HDFGS.IS", "HEDEF.IS", "HEKTS.IS", "HKTM.IS", "HLGYO.IS", "HOROZ.IS",
-    "HRKET.IS", "HTTBT.IS", "HUBVC.IS", "HUNER.IS", "HURGZ.IS", "ICBCT.IS", "ICUGS.IS", "IDGYO.IS", "IEYHO.IS", "IHAAS.IS",
-    "IHEVA.IS", "IHGZT.IS", "IHLAS.IS", "IHLGM.IS", "IHYAY.IS", "IMASM.IS", "INDES.IS", "INFO.IS", "INGRM.IS", "INTEK.IS",
-    "INTEM.IS", "INVEO.IS", "INVES.IS", "IPEKE.IS", "ISATR.IS", "ISBIR.IS", "ISBTR.IS", "ISCTR.IS", "ISDMR.IS", "ISFIN.IS",
-    "ISGSY.IS", "ISGYO.IS", "ISKPL.IS", "ISKUR.IS", "ISMEN.IS", "ISSEN.IS", "ISYAT.IS", "IZENR.IS", "IZFAS.IS", "IZINV.IS",
-    "IZMDC.IS", "JANTS.IS", "KAPLM.IS", "KAREL.IS", "KARSN.IS", "KARTN.IS", "KATMR.IS", "KAYSE.IS", "KBORU.IS", "KCAER.IS",
-    "KCHOL.IS", "KENT.IS", "KERVN.IS", "KERVT.IS", "KFEIN.IS", "KGYO.IS", "KIMMR.IS", "KLGYO.IS", "KLKIM.IS", "KLMSN.IS",
-    "KLNMA.IS", "KLRHO.IS", "KLSER.IS", "KLSYN.IS", "KLYPV.IS", "KMPUR.IS", "KNFRT.IS", "KOCMT.IS", "KONKA.IS", "KONTR.IS",
-    "KONYA.IS", "KOPOL.IS", "KORDS.IS", "KOTON.IS", "KOZAA.IS", "KOZAL.IS", "KRDMA.IS", "KRDMB.IS", "KRDMD.IS", "KRGYO.IS",
-    "KRONT.IS", "KRPLS.IS", "KRSTL.IS", "KRTEK.IS", "KRVGD.IS", "KSTUR.IS", "KTLEV.IS", "KTSKR.IS", "KUTPO.IS", "KUVVA.IS",
-    "KUYAS.IS", "KZBGY.IS", "KZGYO.IS", "LIDER.IS", "LIDFA.IS", "LILAK.IS", "LINK.IS", "LKMNH.IS", "LMKDC.IS", "LOGO.IS",
-    "LRSHO.IS", "LUKSK.IS", "LYDHO.IS", "LYDYE.IS", "MAALT.IS", "MACKO.IS", "MAGEN.IS", "MAKIM.IS", "MAKTK.IS", "MANAS.IS",
-    "MARBL.IS", "MARKA.IS", "MARTI.IS", "MAVI.IS", "MEDTR.IS", "MEGAP.IS", "MEGMT.IS", "MEKAG.IS", "MEPET.IS", "MERCN.IS",
-    "MERIT.IS", "MERKO.IS", "METRO.IS", "METUR.IS", "MGROS.IS", "MHRGY.IS", "MIATK.IS", "MMCAS.IS", "MNDRS.IS", "MNDTR.IS",
-    "MOBTL.IS", "MOGAN.IS", "MOPAS.IS", "MPARK.IS", "MRGYO.IS", "MRSHL.IS", "MSGYO.IS", "MTRKS.IS", "MTRYO.IS", "MZHLD.IS",
-    "NATEN.IS", "NETAS.IS", "NIBAS.IS", "NTGAZ.IS", "NTHOL.IS", "NUGYO.IS", "NUHCM.IS", "OBAMS.IS", "OBASE.IS", "ODAS.IS",
-    "ODINE.IS", "OFSYM.IS", "ONCSM.IS", "ONRYT.IS", "ORCAY.IS", "ORGE.IS", "ORMA.IS", "OSMEN.IS", "OSTIM.IS", "OTKAR.IS",
-    "OTTO.IS", "OYAKC.IS", "OYAYO.IS", "OYLUM.IS", "OYYAT.IS", "OZATD.IS", "OZGYO.IS", "OZKGY.IS", "OZRDN.IS", "OZSUB.IS",
-    "OZYSR.IS", "PAGYO.IS", "PAMEL.IS", "PAPIL.IS", "PARSN.IS", "PASEU.IS", "PATEK.IS", "PCILT.IS", "PEHOL.IS", "PEKGY.IS",
-    "PENGD.IS", "PENTA.IS", "PETKM.IS", "PETUN.IS", "PGSUS.IS", "PINSU.IS", "PKART.IS", "PKENT.IS", "PLTUR.IS", "PNLSN.IS",
-    "PNSUT.IS", "POLHO.IS", "POLTK.IS", "PRDGS.IS", "PRKAB.IS", "PRKME.IS", "PRZMA.IS", "PSDTC.IS", "PSGYO.IS", "QNBFK.IS",
-    "QNBTR.IS", "QUAGR.IS", "RALYH.IS", "RAYSG.IS", "REEDR.IS", "RGYAS.IS", "RNPOL.IS", "RODRG.IS", "RTALB.IS", "RUBNS.IS",
-    "RUZYE.IS", "RYGYO.IS", "RYSAS.IS", "SAFKR.IS", "SAHOL.IS", "SAMAT.IS", "SANEL.IS", "SANFM.IS", "SANKO.IS", "SARKY.IS",
-    "SASA.IS", "SAYAS.IS", "SDTTR.IS", "SEGMN.IS", "SEGYO.IS", "SEKFK.IS", "SEKUR.IS", "SELEC.IS", "SELGD.IS", "SELVA.IS",
-    "SERNT.IS", "SEYKM.IS", "SILVR.IS", "SISE.IS", "SKBNK.IS", "SKTAS.IS", "SKYLP.IS", "SKYMD.IS", "SMART.IS", "SMRTG.IS",
-    "SMRVA.IS", "SNGYO.IS", "SNICA.IS", "SNKRN.IS", "SNPAM.IS", "SODSN.IS", "SOKE.IS", "SOKM.IS", "SONME.IS", "SRVGY.IS",
-    "SUMAS.IS", "SUNTK.IS", "SURGY.IS", "SUWEN.IS", "TABGD.IS", "TARKM.IS", "TATEN.IS", "TATGD.IS", "TAVHL.IS", "TBORG.IS",
-    "TCELL.IS", "TCKRC.IS", "TDGYO.IS", "TEKTU.IS", "TERA.IS", "TEZOL.IS", "TGSAS.IS", "THYAO.IS", "TKFEN.IS", "TKNSA.IS",
-    "TLMAN.IS", "TMPOL.IS", "TMSN.IS", "TNZTP.IS", "TOASO.IS", "TRCAS.IS", "TRGYO.IS", "TRILC.IS", "TSGYO.IS", "TSKB.IS",
-    "TSPOR.IS", "TTKOM.IS", "TTRAK.IS", "TUCLK.IS", "TUKAS.IS", "TUPRS.IS", "TUREX.IS", "TURGG.IS", "TURSG.IS", "UFUK.IS",
-    "ULAS.IS", "ULKER.IS", "ULUFA.IS", "ULUSE.IS", "ULUUN.IS", "UMPAS.IS", "UNLU.IS", "USAK.IS", "VAKBN.IS", "VAKFN.IS",
-    "VAKKO.IS", "VANGD.IS", "VBTYZ.IS", "VERTU.IS", "VERUS.IS", "VESBE.IS", "VESTL.IS", "VKFYO.IS", "VKGYO.IS", "VKING.IS",
-    "VRGYO.IS", "VSNMD.IS", "YAPRK.IS", "YATAS.IS", "YAYLA.IS", "YBTAS.IS", "YEOTK.IS", "YESIL.IS", "YGGYO.IS", "YGYO.IS",
-    "YIGIT.IS", "YKBNK.IS", "YKSLN.IS", "YONGA.IS", "YUNSA.IS", "YYAPI.IS", "YYLGD.IS", "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS"
+# =========================================
+# 🔧 GLOBAL AYARLAR & SABİTLER
+# =========================================
+DEFAULT_BIST_STOCKS = [
+    "THYAO", "GARAN", "AKBNK", "ISCTR", "YKBNK", "EREGL", "TUPRS", "KCHOL", 
+    "SISE", "BIMAS", "MGROS", "SASA", "TAVIL", "FROTO", "TOASO", "ARCLK", 
+    "KOZAL", "ASELS", "TCELL", "TTKOM", "VESTL", "VAKBN", "HALKB", "PETKM", 
+    "DOHOL", "ODAS", "EKGYO", "AKSEN", "ALARK", "ENKAI"
 ]
 
-# Teknik göstergeler
-def calculate_rsi(data, period=14):
-    """RSI hesaplama"""
-    delta = data.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+RSI_MIN = st.session_state.get("rsi_min", 60)
+ADX_MIN = st.session_state.get("adx_min", 25)
+VOLUME_Z_MIN = st.session_state.get("vol_z_min", 2.0)
 
-def calculate_momentum(data, period=10):
-    """Momentum hesaplama"""
-    return (data / data.shift(period)) * 100
-
-def calculate_adx(df, period=14):
-    """ADX hesaplama"""
-    high = df['High']
-    low = df['Low']
-    close = df['Close']
-    
-    tr = pd.concat([
-        high - low,
-        abs(high - close.shift()),
-        abs(low - close.shift())
-    ], axis=1).max(axis=1)
-    
-    atr = tr.rolling(window=period).mean()
-    plus_dm = high.diff()
-    plus_dm = plus_dm.where(plus_dm > 0, 0)
-    minus_dm = -low.diff()
-    minus_dm = minus_dm.where(minus_dm > 0, 0)
-    
-    plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
-    minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
-    
-    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
-    adx = dx.rolling(window=period).mean()
-    
-    return adx
-
-def calculate_volume_spike(df, multiplier=2.5):
-    """Hacim patlaması hesaplama"""
-    volume_ma = df['Volume'].rolling(window=20).mean()
-    return df['Volume'] > (volume_ma * multiplier)
-
+# =========================================
+# 📥 VERİ ÇEKME
+# =========================================
 @st.cache_data(ttl=300)
-def fetch_stock_data(symbol, period="3mo"):
-    """Hisse verisi çekme"""
+def get_data(symbol, timeframe="1d"):
+    """Yahoo Finance'ten veri çeker. Hata durumunda None döner."""
     try:
-        stock = yf.Ticker(symbol)
-        df = stock.history(period=period)
+        ticker = yf.Ticker(f"{symbol}.IS")
+        # 4h interval bazı hisselerde desteklenmeyebilir, 1h fallback olarak kullanılabilir
+        df = ticker.history(period="2y", interval=timeframe)
         if df.empty:
             return None
+        
+        # Sütun isimlerini standartlaştır
+        df.columns = [col.lower() for col in df.columns]
         return df
-    except Exception as e:
-        st.warning(f"Veri çekilemedi {symbol}: {str(e)}")
+    except Exception:
         return None
 
-def analyze_stock(symbol, params):
-    """Tek hisse analizi"""
-    df = fetch_stock_data(symbol)
-    if df is None or len(df) < 30:
+# =========================================
+# 📊 GÖSTERGELER (Manuel Hesaplama - pandas/numpy)
+# =========================================
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / (loss + 1e-8)
+    return 100 - (100 / (1 + rs))
+
+def calculate_ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+def calculate_adx(high, low, close, period=14):
+    plus_dm = high.diff()
+    minus_dm = low.diff()
+    plus_dm = np.where((plus_dm > minus_dm) & (plus_dm > 0), plus_dm, 0)
+    minus_dm = np.where((minus_dm > plus_dm) & (minus_dm > 0), minus_dm, 0)
+    
+    tr1 = high - low
+    tr2 = abs(high - close.shift())
+    tr3 = abs(low - close.shift())
+    tr = pd.DataFrame([tr1, tr2, tr3]).max()
+    
+    tr_smooth = tr.ewm(alpha=1/period, adjust=False).mean()
+    plus_di = 100 * pd.Series(plus_dm).rolling(window=period).mean() / (tr_smooth + 1e-8)
+    minus_di = 100 * pd.Series(minus_dm).rolling(window=period).mean() / (tr_smooth + 1e-8)
+    
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-8)
+    return dx.rolling(window=period).mean()
+
+def calculate_roc(series, period=10):
+    return ((series - series.shift(period)) / series.shift(period)) * 100
+
+def calculate_cmf(high, low, close, volume, period=20):
+    mfm = ((close - low) - (high - close)) / (high - low + 1e-8)
+    mfv = mfm * volume
+    return mfv.rolling(window=period).sum() / volume.rolling(window=period).sum()
+
+def calculate_volume_zscore(volume, period=20):
+    mean = volume.rolling(window=period).mean()
+    std = volume.rolling(window=period).std()
+    return (volume - mean) / (std + 1e-8)
+
+def add_indicators(df):
+    df = df.copy()
+    df["RSI"] = calculate_rsi(df["close"], 14)
+    df["ADX"] = calculate_adx(df["high"], df["low"], df["close"], 14)
+    df["EMA50"] = calculate_ema(df["close"], 50)
+    df["ROC"] = calculate_roc(df["close"], 10)
+    df["CMF"] = calculate_cmf(df["high"], df["low"], df["close"], df["volume"], 20)
+    df["VOL_Z"] = calculate_volume_zscore(df["volume"], 20)
+    df["HH20"] = df["high"].rolling(20).max()
+    return df
+
+# =========================================
+# ⚡ HIZLI ÖN FİLTRE
+# =========================================
+def hizli_filtre(symbol):
+    df = get_data(symbol, "1d")
+    if df is None or len(df) < 20:
+        return False
+    df["EMA20"] = calculate_ema(df["close"], 20)
+    return df["close"].iloc[-1] > df["EMA20"].iloc[-1]
+
+# =========================================
+# 🤖 AI YORUM
+# =========================================
+def ai_yorum(row):
+    yorum = []
+    if pd.notna(row.get("RSI")) and row["RSI"] > 60:
+        yorum.append("Momentum güçlü")
+    if pd.notna(row.get("ADX")) and row["ADX"] > 25:
+        yorum.append("Trend kuvvetli")
+    if pd.notna(row.get("CMF")) and row["CMF"] > 0:
+        yorum.append("Para girişi var")
+    if pd.notna(row.get("VOL_Z")) and row["VOL_Z"] > 2:
+        yorum.append("Hacim patlaması")
+    return " | ".join(yorum) if yorum else "Nötr"
+
+# =========================================
+# 🧠 ANALİZ
+# =========================================
+def analyze_symbol(symbol):
+    df_d = get_data(symbol, "1d")
+    df_4h = get_data(symbol, "4h")
+    
+    if df_d is None or df_4h is None:
         return None
-    
-    # Göstergeleri hesapla
-    df['RSI'] = calculate_rsi(df['Close'], params['rsi_period'])
-    df['Momentum'] = calculate_momentum(df['Close'], params['momentum_period'])
-    df['ADX'] = calculate_adx(df, params['adx_period'])
-    df['Volume_Spike'] = calculate_volume_spike(df, params['hacim_artis_min'])
-    df['Volume_Ratio'] = df['Volume'] / df['Volume'].rolling(20).mean()
-    
-    # Son gün verileri
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-    
-    # Hacim kontrolü
-    volume_ratio = last['Volume_Ratio']
-    volume_spike = last['Volume_Spike']
-    
-    # Kriter kontrolü
-    if (volume_ratio >= params['hacim_artis_min'] and
-        volume_spike and
-        last['RSI'] > params['rsi_min'] and
-        last['Momentum'] > params['momentum_min']):
+    if len(df_d) < 50 or len(df_4h) < 50:
+        return None
         
-        adx = last['ADX']
-        if adx > params['adx_guclu_min']:
-            trend = "Güçlü Trend 🔥"
-            trend_class = "strong"
-        elif adx > params['adx_trend_min']:
-            trend = "Yeni Trend 📈"
-            trend_class = "new"
-        else:
-            trend = "Zayıf ⚠️"
-            trend_class = "weak"
+    df_d = add_indicators(df_d).dropna()
+    df_4h = add_indicators(df_4h).dropna()
+    
+    if len(df_d) == 0 or len(df_4h) == 0:
+        return None
         
+    d = df_d.iloc[-1]
+    h4 = df_4h.iloc[-1]
+    
+    # Şartlar (AND Mantığı)
+    trend = d["close"] > d["EMA50"]
+    rsi = pd.notna(d["RSI"]) and d["RSI"] > RSI_MIN
+    adx = pd.notna(d["ADX"]) and d["ADX"] > ADX_MIN
+    volume = pd.notna(d["VOL_Z"]) and d["VOL_Z"] > VOLUME_Z_MIN
+    para = pd.notna(d["CMF"]) and d["CMF"] > 0
+    breakout = d["close"] > df_d["HH20"].iloc[-2] if len(df_d) > 1 else False
+    mtf = (pd.notna(h4["RSI"]) and h4["RSI"] > 50 and h4["close"] > h4["EMA50"])
+    
+    if all([trend, rsi, adx, volume, para, breakout, mtf]):
         return {
-            'Hisse': symbol.replace('.IS', ''),
-            'Fiyat': round(last['Close'], 2),
-            'RSI': round(last['RSI'], 2),
-            'Momentum': round(last['Momentum'], 2),
-            'ADX': round(adx, 2),
-            'Hacim_Artis': round(volume_ratio, 2),
-            'Trend': trend,
-            'Trend_Class': trend_class
+            "Hisse": symbol,
+            "Fiyat": round(float(d["close"]), 2),
+            "RSI": round(float(d["RSI"]), 2),
+            "ADX": round(float(d["ADX"]), 2),
+            "Hacim Skor": round(float(d["VOL_Z"]), 2),
+            "AI Yorum": ai_yorum(d)
         }
     return None
 
+# =========================================
+# 📈 GRAFİK OLUŞTURUCU
+# =========================================
 def create_chart(symbol, df):
-    """Grafik oluşturma"""
-    fig = make_subplots(
-        rows=3, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.05,
-        subplot_titles=("Fiyat", "RSI", "ADX"),
-        row_heights=[0.5, 0.25, 0.25]
-    )
+    fig = go.Figure()
     
-    # Fiyat grafiği
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index, 
-            open=df['Open'], high=df['High'],
-            low=df['Low'], close=df['Close'],
-            name="Fiyat"
-        ),
-        row=1, col=1
-    )
+    # Fiyat & EMA50
+    fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], 
+                                 low=df["low"], close=df["close"], name="Fiyat"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["EMA50"], line=dict(color="orange", width=2), name="EMA50"))
     
-    # RSI
-    fig.add_trace(
-        go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI'),
-        row=2, col=1
-    )
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+    # RSI (Alt grafik)
+    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], yaxis="y2", line=dict(color="purple", width=2), name="RSI"))
+    fig.add_hline(y=70, line_dash="dash", line_color="red", yaxis="y2")
+    fig.add_hline(y=30, line_dash="dash", line_color="green", yaxis="y2")
     
-    # ADX
-    fig.add_trace(
-        go.Scatter(x=df.index, y=df['ADX'], mode='lines', name='ADX'),
-        row=3, col=1
-    )
-    fig.add_hline(y=25, line_dash="dash", line_color="gray", row=3, col=1)
-    
+    # Layout
     fig.update_layout(
-        title=f"{symbol} - Teknik Analiz",
-        height=800,
-        xaxis_title="Tarih"
+        title=f"{symbol} Teknik Analiz",
+        xaxis_rangeslider_visible=False,
+        yaxis=dict(title="Fiyat", side="right"),
+        yaxis2=dict(title="RSI", overlaying="y", side="left", range=[0, 100], showgrid=False),
+        height=600,
+        template="plotly_dark"
     )
-    
     return fig
 
-# Sidebar
+# =========================================
+# 🖥️ STREAMLET ARAYÜZÜ
+# =========================================
+st.title("📊 BIST TrendScort Pro v2.2")
+st.caption("pandas-ta bağımlılığı olmayan, saf pandas/numpy tabanlı çoklu zaman dilimi tarayıcı")
+
 with st.sidebar:
-    st.header("⚙️ Analiz Parametreleri")
+    st.header("⚙️ Parametreler")
+    RSI_MIN = st.slider("Minimum RSI", 30, 80, 60)
+    ADX_MIN = st.slider("Minimum ADX", 10, 40, 25)
+    VOLUME_Z_MIN = st.slider("Min Hacim Z-Skoru", 1.0, 5.0, 2.0)
+    st.divider()
+    selected_stock = st.selectbox("🔍 Detaylı Grafik İçin Hisse Seç", DEFAULT_BIST_STOCKS)
     
-    params = {
-        'rsi_min': st.slider("Minimum RSI", 30, 80, 57),
-        'momentum_min': st.slider("Minimum Momentum", 90, 150, 105),
-        'hacim_artis_min': st.slider("Hacim Artış Katsayısı", 1.0, 5.0, 2.5, 0.1),
-        'adx_trend_min': st.slider("ADX Trend Eşiği", 10, 40, 19),
-        'adx_guclu_min': st.slider("ADX Güçlü Trend Eşiği", 20, 50, 29),
-        'rsi_period': 14,
-        'momentum_period': 10,
-        'adx_period': 14
-    }
-    
-    st.markdown("---")
-    analyze_btn = st.button("🔍 Analiz Başlat", type="primary", use_container_width=True)
+    st.session_state.update({
+        "rsi_min": RSI_MIN, "adx_min": ADX_MIN, "vol_z_min": VOLUME_Z_MIN
+    })
 
-# Ana içerik
-if analyze_btn:
-    with st.spinner("Analiz yapılıyor..."):
-        progress_bar = st.progress(0)
-        results = []
-        
-        for i, symbol in enumerate(BIST_HISSELER):
-            progress_bar.progress((i + 1) / len(BIST_HISSELER), f"Analiz: {symbol}")
-            result = analyze_stock(symbol, params)
-            if result:
-                results.append(result)
-        
-        progress_bar.empty()
-        
-        if results:
-            df_results = pd.DataFrame(results)
-            st.session_state.results = df_results
-            st.success(f"✅ Analiz tamamlandı! {len(results)} hisse bulundu.")
-        else:
-            st.warning("⚠️ Kriterleri karşılayan hisse bulunamadı.")
+# Global değişkenleri güncelle
+RSI_MIN = st.session_state.get("rsi_min", 60)
+ADX_MIN = st.session_state.get("adx_min", 25)
+VOLUME_Z_MIN = st.session_state.get("vol_z_min", 2.0)
 
-# Sonuçları göster
-if 'results' in st.session_state and st.session_state.results is not None:
-    df_results = st.session_state.results
+if st.button("🚀 Analiz Başlat", type="primary"):
+    results = []
+    total = len(DEFAULT_BIST_STOCKS)
     
-    # Tablo
-    st.subheader("📋 Taranan Hisseler")
-    
-    # Renklendirme
-    def color_trend(val):
-        if 'Güçlü' in val:
-            return 'background-color: #00ff0044'
-        elif 'Yeni' in val:
-            return 'background-color: #ffa50044'
-        return 'background-color: #ff444444'
-    
-    styled_df = df_results.style.applymap(color_trend, subset=['Trend'])
-    st.dataframe(styled_df, use_container_width=True, height=400)
-    
-    # İstatistikler
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Toplam Hisseler", len(df_results))
-    with col2:
-        st.metric("Güçlü Trend", len(df_results[df_results['Trend'].str.contains('Güçlü')]))
-    with col3:
-        st.metric("Ortalama RSI", round(df_results['RSI'].mean(), 1))
-    with col4:
-        st.metric("Ortalama Momentum", round(df_results['Momentum'].mean(), 1))
-    
-    # CSV export
-    csv = df_results.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 CSV İndir",
-        data=csv,
-        file_name=f"bist_tarama_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
-    )
-    
-    # Detaylı grafik
-    st.subheader("📈 Detaylı Analiz")
-    selected = st.selectbox("Hisse seçin:", df_results['Hisse'].tolist())
-    
-    if selected:
-        symbol = f"{selected}.IS"
-        df = fetch_stock_data(symbol, period="3mo")
-        if df is not None:
-            # Göstergeleri ekle
-            df['RSI'] = calculate_rsi(df['Close'], 14)
-            df['ADX'] = calculate_adx(df, 14)
+    with st.status("🔎 BIST hisseleri taranıyor...", expanded=True) as status:
+        for i, symbol in enumerate(DEFAULT_BIST_STOCKS):
+            # Rate limit önleme
+            if i % 20 == 0:
+                time.sleep(0.5)
+                
+            # Hızlı filtre
+            if hizli_filtre(symbol):
+                res = analyze_symbol(symbol)
+                if res:
+                    results.append(res)
+            st.progress((i + 1) / total, text=f"📊 {i+1}/{total} tarandı: {symbol}")
             
-            fig = create_chart(symbol, df)
-            st.plotly_chart(fig, use_container_width=True)
+        status.update(label="✅ Tarama tamamlandı!", state="complete", expanded=False)
+    
+    if results:
+        st.success(f"🎯 {len(results)} adet kriterlere uygun hisse bulundu!")
+        df_results = pd.DataFrame(results)
+        st.dataframe(df_results, use_container_width=True, hide_index=True)
+        
+        # CSV İndirme
+        csv = df_results.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📥 Sonuçları CSV Olarak İndir", csv, "bist_sinyaller.csv", "text/csv")
+    else:
+        st.warning("⚠️ Belirtilen kriterlere uygun hisse bulunamadı. Parametreleri gevşetmeyi deneyin.")
 
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: gray;">
-    <p>BIST TrendScout Pro v2.1 | Veri kaynağı: Yahoo Finance</p>
-</div>
-""", unsafe_allow_html=True)
+# Detay Grafik
+st.divider()
+st.subheader(f"📈 {selected_stock} Detay Görünümü")
+df_detail = get_data(selected_stock, "1d")
+if df_detail is not None and len(df_detail) > 50:
+    df_detail = add_indicators(df_detail).dropna()
+    if len(df_detail) > 0:
+        st.plotly_chart(create_chart(selected_stock, df_detail), use_container_width=True)
+        st.info(f"📅 Son güncelleme: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Veri kaynağı: Yahoo Finance")
+    else:
+        st.error("📉 Yeterli geçmiş veri bulunamadı.")
+else:
+    st.error("🔗 Veri çekilemedi. Hissenin Yahoo Finance'te `.IS` uzantısı ile listelendiğinden emin olun.")
