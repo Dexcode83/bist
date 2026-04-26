@@ -1,11 +1,6 @@
-# 📦 BIST TrendScout PRO v3.5 - Bağımlılıklar
-# Streamlit + yfinance + pandas_ta tabanlı kararlı sürümler
-
-streamlit>=1.35.0
+streamlit>=1.40.0
 pandas>=2.2.0
 numpy>=1.26.0
 yfinance>=0.2.40
-pandas-ta>=0.3.14b0
 plotly>=5.22.0
 requests>=2.31.0
-pandas-ta>=0.4.71b0
