@@ -1,14 +1,6 @@
-# BIST TrendScout Pro v2.2 - Gerekli Paketler
-# ✅ Önerilen Python Sürümü: 3.10 veya üzeri
-
-streamlit>=1.32.0
-pandas>=2.1.0
-numpy>=1.24.0
-yfinance>=0.2.38
-plotly>=5.19.0
-pandas-ta>=0.3.14b0
+streamlit>=1.40.0
+pandas>=2.2.0
+numpy>=1.26.0
+yfinance>=0.2.40
+plotly>=5.22.0
 requests>=2.31.0
-
-# 🤖 İsteğe bağlı: Resmi SDK'lar (kodda requests kullanıldı, gerek yok ama ekleyebilirsiniz)
-# dashscope>=1.14.0
-# openai>=1.10.0
