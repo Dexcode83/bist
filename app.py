@@ -305,7 +305,7 @@ if 'results' in st.session_state and st.session_state.results is not None:
             return 'background-color: #ffa50044'
         return 'background-color: #ff444444'
     
-    styled_df = df_results.style.applymap(color_trend, subset=['Trend'])
+    styled_df = df_results.style.map(color_trend, subset=['Trend'])
     st.dataframe(styled_df, use_container_width=True, height=400)
     
     # İstatistikler
