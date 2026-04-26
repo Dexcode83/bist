@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import time
+import requests  # 🆕 TradingView API için eklendi
 
 # Sayfa yapılandırması
 st.set_page_config(
@@ -38,6 +39,43 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# 🆕 TradingView'den BIST hisse listesi çekme fonksiyonu
+@st.cache_data(ttl=3600)
+def bist_tum_hisseler():
+    """TradingView'den tüm BIST hisselerini çeker"""
+    url = "https://scanner.tradingview.com/turkey/scan"
+    
+    payload = {
+        "filter": [
+            {"left": "exchange", "operation": "equal", "right": "BIST"}
+        ],
+        "options": {"lang": "tr"},
+        "symbols": {"query": {"types": []}, "tickers": []},
+        "columns": ["name"]
+    }
+    
+    try:
+        r = requests.post(url, json=payload, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        
+        hisseler = []
+        for item in data["data"]:
+            name = item["d"][0].replace("BIST:", "").strip().upper()
+            if 3 <= len(name) <= 5 and name.isalpha():
+                hisseler.append(f"{name}.IS")
+        
+        return list(set(hisseler))
+    except Exception as e:
+        st.warning(f"TradingView'den hisse listesi çekilemedi: {e}")
+        # Yedek liste
+        return [
+            'THYAO.IS', 'ASELS.IS', 'GARAN.IS', 'ISCTR.IS', 'KCHOL.IS',
+            'SISE.IS', 'TUPRS.IS', 'PETKM.IS', 'EREGL.IS', 'FROTO.IS',
+            'SAHOL.IS', 'BIMAS.IS', 'TTKOM.IS', 'YKBNK.IS', 'AKBNK.IS',
+            'KOZAL.IS', 'EKGYO.IS', 'TOASO.IS', 'OTKAR.IS', 'DOHOL.IS'
+        ]
+
 # Başlık
 st.markdown("""
 <div class="main-header">
@@ -46,13 +84,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# BIST hisse listesi
-BIST_HISSELER = [
-    'THYAO.IS', 'ASELS.IS', 'GARAN.IS', 'ISCTR.IS', 'KCHOL.IS',
-    'SISE.IS', 'TUPRS.IS', 'PETKM.IS', 'EREGL.IS', 'FROTO.IS',
-    'SAHOL.IS', 'BIMAS.IS', 'TTKOM.IS', 'YKBNK.IS', 'AKBNK.IS',
-    'KOZAL.IS', 'EKGYO.IS', 'TOASO.IS', 'OTKAR.IS', 'DOHOL.IS'
-]
+# 🆕 Dinamik BIST hisse listesi (ESKİ sabit liste yerine)
+with st.spinner("📊 BIST hisse listesi güncelleniyor..."):
+    BIST_HISSELER = bist_tum_hisseler()
+    if not BIST_HISSELER:
+        st.error("Hisse listesi çekilemedi!")
+        st.stop()
 
 # Teknik göstergeler
 def calculate_rsi(data, period=14):
@@ -210,6 +247,9 @@ def create_chart(symbol, df):
 with st.sidebar:
     st.header("⚙️ Analiz Parametreleri")
     
+    # 🆕 Hisse sayısı bilgisi
+    st.info(f"📊 Toplam {len(BIST_HISSELER)} hisse taranacak")
+    
     params = {
         'rsi_min': st.slider("Minimum RSI", 30, 80, 57),
         'momentum_min': st.slider("Minimum Momentum", 90, 150, 105),
@@ -223,6 +263,11 @@ with st.sidebar:
     
     st.markdown("---")
     analyze_btn = st.button("🔍 Analiz Başlat", type="primary", use_container_width=True)
+    
+    # 🆕 Manuel yenileme butonu
+    if st.button("🔄 Hisse Listesini Yenile", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 # Ana içerik
 if analyze_btn:
@@ -302,6 +347,6 @@ if 'results' in st.session_state and st.session_state.results is not None:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: gray;">
-    <p>BIST TrendScout Pro v2.1 | Veri kaynağı: Yahoo Finance</p>
+    <p>BIST TrendScout Pro v2.1 | Veri kaynağı: Yahoo Finance & TradingView</p>
 </div>
 """, unsafe_allow_html=True)
