@@ -1,6 +1,6 @@
 # =========================================
-# 🚀 BIST TrendScout PRO v3.5 - Streamlit Cloud Uyumlu (Python 3.14)
-# ✅ pandas_ta YOK | ✅ Tüm Parametreler Sol Panelde | ✅ 630 Hisse Tam İşlem
+# 🚀 BIST TrendScout PRO v3.5 - Streamlit Cloud Uyumlu
+# ✅ Python 3.14 | ✅ pandas_ta YOK | ✅ Tüm ID'ler Benzersiz | ✅ 630 Hisse Tam İşlem
 # =========================================
 
 import streamlit as st
@@ -142,7 +142,6 @@ def analyze_symbol(symbol, params):
     adx = pd.notna(d["ADX"]) and d["ADX"] > params["adx_min"]
     volume = pd.notna(d["VOL_Z"]) and d["VOL_Z"] > params["vol_z_min"]
     para = pd.notna(d["CMF"]) and d["CMF"] > params["cmf_min"]
-    # ✅ shift() hatası giderildi: DataFrame üzerinden önceki kapanış alındı
     prev_close = df_d["close"].iloc[-2] if len(df_d) > 1 else d["close"]
     breakout = len(df_d) > params["breakout_len"] and d["close"] > df_d["HH"].iloc[-2]
     mtf = pd.notna(h4["RSI"]) and h4["RSI"] > 50 and h4["close"] > h4["EMA_LONG"]
@@ -158,39 +157,39 @@ def analyze_symbol(symbol, params):
     return None
 
 # =========================================
-# 🎛️ SOL PANEL (TÜM PARAMETRELER)
+# 🎛️ SOL PANEL (TÜM PARAMETRELER - BENZERSİZ KEY'LER)
 # =========================================
 
 with st.sidebar:
     st.title("⚙️ Tüm Parametreler")
     
     st.subheader("📊 RSI")
-    rsi_len = st.number_input("Periyot", 5, 50, 14)
-    rsi_min = st.slider("Minimum Değer", 30, 80, 55)
+    rsi_len = st.number_input("RSI Periyot", 5, 50, 14, key="rsi_len_input")
+    rsi_min = st.slider("RSI Minimum Değer", 30, 80, 55, key="rsi_min_slider")
     
     st.subheader("🌪️ ADX")
-    adx_len = st.number_input("Periyot", 5, 50, 14)
-    adx_min = st.slider("Minimum Değer", 10, 50, 20)
+    adx_len = st.number_input("ADX Periyot", 5, 50, 14, key="adx_len_input")
+    adx_min = st.slider("ADX Minimum Değer", 10, 50, 20, key="adx_min_slider")
     
     st.subheader("📉 EMA")
-    ema_short = st.number_input("Kısa Periyot", 10, 100, 20)
-    ema_long = st.number_input("Uzun Periyot", 20, 200, 50)
+    ema_short = st.number_input("Kısa EMA Periyot", 10, 100, 20, key="ema_short_input")
+    ema_long = st.number_input("Uzun EMA Periyot", 20, 200, 50, key="ema_long_input")
     
     st.subheader("💰 CMF")
-    cmf_len = st.number_input("Periyot", 10, 50, 20)
-    cmf_min = st.slider("Minimum Değer", -0.5, 0.5, 0.0, 0.01)
+    cmf_len = st.number_input("CMF Periyot", 10, 50, 20, key="cmf_len_input")
+    cmf_min = st.slider("CMF Minimum Değer", -0.5, 0.5, 0.0, 0.01, key="cmf_min_slider")
     
     st.subheader("📦 Hacim (Z-Skor)")
-    vol_len = st.number_input("Periyot", 10, 50, 20)
-    vol_z_min = st.slider("Minimum Z-Skor", 0.5, 5.0, 2.0)
+    vol_len = st.number_input("Hacim Periyot", 10, 50, 20, key="vol_len_input")
+    vol_z_min = st.slider("Min Z-Skor", 0.5, 5.0, 2.0, key="vol_z_min_slider")
     
     st.subheader("📈 Kırılım")
-    breakout_len = st.number_input("Zirve Penceresi", 10, 100, 20)
+    breakout_len = st.number_input("Zirve Penceresi", 10, 100, 20, key="breakout_len_input")
     
     st.divider()
-    use_fast = st.checkbox("⚡ Hızlı Filtre (EMA20)", value=True)
+    use_fast = st.checkbox("⚡ Hızlı Filtre (EMA20)", value=True, key="use_fast_checkbox")
     
-    if st.button("🚀 Taramayı Başlat", type="primary", width="stretch"):
+    if st.button("🚀 Taramayı Başlat", type="primary", width="stretch", key="start_scan_btn"):
         st.session_state.run_scan = True
 
 # =========================================
@@ -232,8 +231,7 @@ if st.session_state.get("run_scan", False):
         res = analyze_symbol(h, params)
         if res: results.append(res)
             
-        # yfinance rate limit koruması
-        if i % 15 == 0: time.sleep(0.15)
+        if i % 15 == 0: time.sleep(0.15)  # yfinance rate limit koruması
         
     progress.empty()
     status.empty()
@@ -248,7 +246,6 @@ if st.session_state.get("run_scan", False):
         c4.metric("🌪️ Ort. ADX", f"{df_res['ADX'].dropna().mean():.1f}")
         
         st.subheader("📋 Sinyal Tablosu")
-        # ✅ Pandas 3.0+ uyumlu styling
         styled = df_res.style.format({
             "Fiyat": "{:.2f}", "Degisim_%": "{:.2f}%", "RSI": "{:.2f}", 
             "ADX": "{:.2f}", "Hacim_Z": "{:.2f}", "CMF": "{:.3f}"
@@ -264,7 +261,7 @@ if st.session_state.get("run_scan", False):
 with st.expander("📖 Bilgi & Kullanım"):
     st.markdown("""
     - **Tüm parametreler** sol panelden anlık değiştirilebilir.
-    - **630 hisse** sırasıyla taranır. Delisted veya veri çekilemeyenler otomatik atlanır.
+    - **Tüm BIST hisseleri** sırasıyla taranır. Delisted veya veri çekilemeyenler otomatik atlanır.
     - `pandas_ta` ve `numba` **kaldırıldı**. Python 3.14 ile %100 uyumlu.
     - Veriler 15-20dk gecikmeli olabilir. Yatırım tavsiyesi değildir.
     """)
