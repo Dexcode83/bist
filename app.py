@@ -1,7 +1,3 @@
-"""
-BIST TrendScout Pro v3.6 - Python 3.14 & Pandas 3.x Uyumlu
-Tüm log hataları giderildi. pandas-ta bağımlılığı kaldırıldı.
-"""
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,151 +5,120 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
-import json
-import re
-from datetime import datetime
 import warnings
+from datetime import datetime
 
+# Uyarıları gizle
 warnings.filterwarnings('ignore')
 
 # ═══════════════════════════════════════════════════════════
-# 1. SAYFA AYARLARI & CSS
+# 1. SAYFA AYARLARI
 # ═══════════════════════════════════════════════════════════
 st.set_page_config(page_title="BIST TrendScout Pro", page_icon="📈", layout="wide")
 
 st.markdown("""
 <style>
-    .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem; border-radius: 12px; text-align: center; color: white; margin-bottom: 1.5rem;
-    }
-    .ai-card {
-        background: linear-gradient(135deg, #667eea22, #764ba222);
-        padding: 1rem; border-radius: 10px; border-left: 4px solid #667eea; margin: 1rem 0;
-    }
+    .main-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 12px; text-align: center; color: white; margin-bottom: 1.5rem; }
+    .ai-card { background: linear-gradient(135deg, #667eea22, #764ba222); padding: 1rem; border-radius: 10px; border-left: 4px solid #667eea; margin: 1rem 0; }
+    .metric-val { font-size: 1.5rem; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
-# 2. VERİ ÇEKME & SAF PANDAS GÖSTERGELERİ (pandas-ta YOK)
+# 2. MANUEL GÖSTERGE HESAPLAYICILARI (pandas-ta YOK)
 # ═══════════════════════════════════════════════════════════
-@st.cache_data(ttl=3600)
-def fetch_bist_tickers():
-    url = "https://scanner.tradingview.com/turkey/scan"
-    payload = {"filter": [{"left": "exchange", "operation": "equal", "right": "BIST"}], "columns": ["name"]}
-    try:
-        res = requests.post(url, json=payload, timeout=10).json()
-        tickers = [f"{item['d'][0].replace('BIST:','')}.IS" for item in res.get('data', []) if len(item['d'][0])<=5]
-        return list(set(tickers))
-    except:
-        return ['THYAO.IS','ASELS.IS','GARAN.IS','ISCTR.IS','KCHOL.IS','EREGL.IS','TUPRS.IS','SISE.IS']
-
-def fetch_data(symbol, period="6mo"):
-    try:
-        df = yf.Ticker(symbol).history(period=period)
-        if len(df) < 30: return None
-        df.columns = [c.lower().replace(' ', '_') for c in df.columns]
-        return df
-    except: return None
-
-def calculate_indicators(df):
-    """pandas-ta olmadan, saf pandas/numpy ile profesyonel göstergeler"""
+def calculate_indicators(df, params):
+    """pandas-ta kullanmadan, saf pandas/numpy ile tüm göstergeleri hesaplar"""
     df = df.copy()
-    c, h, l, v = df['close'], df['high'], df['low'], df['volume']
+    c, h, l, v = df['Close'], df['High'], df['Low'], df['Volume']
     
     # RSI(14)
     delta = c.diff()
-    gain, loss = delta.clip(lower=0), (-delta).clip(lower=0)
-    avg_gain, avg_loss = gain.rolling(14).mean(), loss.rolling(14).mean()
-    df['rsi'] = 100 - (100 / (1 + (avg_gain / (avg_loss + 1e-8))))
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / (loss + 1e-8)
+    df['RSI'] = 100 - (100 / (1 + rs))
     
     # ADX(14)
-    tr = pd.concat([h-l, abs(h-c.shift(1)), abs(l-c.shift(1))], axis=1).max(axis=1)
+    tr = pd.concat([h - l, abs(h - c.shift(1)), abs(l - c.shift(1))], axis=1).max(axis=1)
     atr = tr.rolling(14).mean()
-    pdm = h.diff().clip(lower=0)
-    mdm = (-l.diff()).clip(lower=0)
-    pdm = pdm.where(pdm > mdm, 0)
-    mdm = mdm.where(mdm > pdm, 0)
-    pdi = 100 * (pdm.rolling(14).mean() / (atr + 1e-8))
-    mdi = 100 * (mdm.rolling(14).mean() / (atr + 1e-8))
-    dx = 100 * abs(pdi - mdi) / ((pdi + mdi) + 1e-8)
-    df['adx'] = dx.rolling(14).mean()
+    plus_dm = h.diff().clip(lower=0)
+    minus_dm = (-l.diff()).clip(lower=0)
+    plus_di = 100 * (plus_dm.rolling(14).mean() / (atr + 1e-8))
+    minus_di = 100 * (minus_dm.rolling(14).mean() / (atr + 1e-8))
+    dx = 100 * abs(plus_di - minus_di) / ((plus_di + minus_di) + 1e-8)
+    df['ADX'] = dx.rolling(14).mean()
     
-    # ROC(10) & CMF(20)
-    df['roc'] = c.pct_change(10) * 100
+    # ROC(10)
+    df['ROC'] = c.pct_change(10) * 100
+    
+    # CMF(20)
     mf = ((c - l) - (h - c)) / ((h - l) + 1e-8)
-    df['cmf'] = (mf * v).rolling(20).sum() / v.rolling(20).sum()
+    df['CMF'] = (mf * v).rolling(20).sum() / v.rolling(20).sum()
     
-    # EMA & Hacim Z-Skor
-    df['ema50'] = c.ewm(span=50, adjust=False).mean()
-    df['ema200'] = c.ewm(span=200, adjust=False).mean()
-    vol_m, vol_s = v.rolling(20).mean(), v.rolling(20).std()
-    df['vol_z'] = (v - vol_m) / (vol_s + 1e-8)
+    # EMA'lar
+    df['EMA50'] = c.ewm(span=50, adjust=False).mean()
+    df['EMA200'] = c.ewm(span=200, adjust=False).mean()
     
-    # Degisim_% (DataFrame üzerinde hesapla, numpy.float64 hatası önlenir)
-    df['degisim_pct'] = c.pct_change() * 100
+    # Hacim Z-Skor
+    vol_m = v.rolling(20).mean()
+    vol_s = v.rolling(20).std()
+    df['VOL_Z'] = (v - vol_m) / (vol_s + 1e-8)
+    
+    # Değişim Yüzdesi
+    df['Degisim_%'] = c.pct_change() * 100
     
     return df
 
 # ═══════════════════════════════════════════════════════════
-# 3. ANALİZ & AI MODÜLÜ
+# 3. VERİ & ANALİZ
 # ═══════════════════════════════════════════════════════════
-def analyze_stock(symbol, params):
-    df = fetch_data(symbol)
-    if df is None or len(df) < 50: return None
-    
-    df = calculate_indicators(df)
-    d = df.iloc[-1]
-    
-    # Filtreler
-    if not (d['vol_z'] > params['vol_z'] and d['cmf'] > params['cmf'] and 
-            d['rsi'] > params['rsi'] and d['roc'] > params['roc'] and
-            d['close'] > d['ema50'] > d['ema200']):
-        return None
-        
-    # Skor & Trend
-    adx, base = d['adx'], 50
-    if adx > params['adx_guclu']: trend, base = "Güçlü Boğa 🔥", 85
-    elif adx > params['adx_trend']: trend, base = "Yükseliş 📈", 70
-    else: trend, base = "Zayıf ⚠️", 40
-    
-    skor = int(min(100, base + d['vol_z']*1.5 + (5 if d['cmf']>0 else -3)))
-    
-    return {
-        "Hisse": symbol.replace(".IS",""),
-        "Fiyat": round(d["close"],2),
-        "Degisim_%": round(d["degisim_pct"],2),
-        "RSI": round(d["rsi"],1),
-        "ADX": round(d["adx"],1),
-        "CMF": round(d["cmf"],3),
-        "Hacim_Z": round(d["vol_z"],2),
-        "Skor": skor,
-        "Trend": trend
-    }
-
-@st.cache_data(ttl=1800)
-def get_ai_analysis(symbol, df):
-    key = st.secrets.get("DASHSCOPE_API_KEY", "") or st.secrets.get("OPENAI_API_KEY", "")
-    if not key: return {"error": "API Key eksik (.streamlit/secrets.toml)"}
-    
-    d = df.iloc[-1]
-    prompt = f"""Sadece teknik analiz yap. Hisse: {symbol}, Fiyat: {d['close']}, RSI: {d['rsi']:.1f}, ADX: {d['adx']:.1f}, ROC: {d['roc']:.1f}, CMF: {d['cmf']:.3f}
-Geçerli JSON döndür: {{"öneri": "AL/BEKLE/SAT", "gerekce": "kisa aciklama", "risk": 1-10}}"""
-    
+@st.cache_data(ttl=3600)
+def fetch_tickers():
     try:
-        res = requests.post("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"model": "qwen-plus", "messages": [{"role":"user","content": prompt}], "temperature": 0.3},
-            timeout=15).json()
-        txt = res["choices"][0]["message"]["content"]
-        return json.loads(re.sub(r'```(?:json)?\n?|\n?```', '', txt))
-    except Exception as e:
-        return {"error": str(e)}
+        url = "https://scanner.tradingview.com/turkey/scan"
+        res = requests.post(url, json={"filter": [{"left": "exchange", "operation": "equal", "right": "BIST"}], "columns": ["name"]}, timeout=10).json()
+        return [f"{x['d'][0].replace('BIST:','')}.IS" for x in res.get('data', []) if len(x['d'][0])<=5]
+    except:
+        return ['THYAO.IS', 'ASELS.IS', 'GARAN.IS', 'EREGL.IS', 'KCHOL.IS']
+
+def analyze_stock(symbol, params):
+    try:
+        df = yf.Ticker(symbol).history(period="6mo")
+        if len(df) < 50: return None
+        
+        df = calculate_indicators(df, params)
+        d = df.iloc[-1]
+        
+        # Filtreler
+        if not (d['VOL_Z'] > params['vol_z'] and d['CMF'] > params['cmf'] and 
+                d['RSI'] > params['rsi'] and d['ROC'] > params['roc'] and
+                d['Close'] > d['EMA50'] > d['EMA200']):
+            return None
+            
+        # Skorlama
+        base = 50
+        if d['ADX'] > params['adx_guclu']: base = 85
+        elif d['ADX'] > params['adx_trend']: base = 70
+        skor = int(min(100, base + d['VOL_Z'] * 1.5))
+        
+        return {
+            "Hisse": symbol.replace(".IS",""),
+            "Fiyat": round(d["Close"],2),
+            "Degisim_%": round(d["Degisim_%"],2),
+            "RSI": round(d["RSI"],1),
+            "ADX": round(d["ADX"],1),
+            "CMF": round(d["CMF"],3),
+            "Hacim_Z": round(d["VOL_Z"],2),
+            "Skor": skor,
+            "Trend": "Güçlü 🔥" if base > 80 else "Yükseliş 📈"
+        }
+    except: return None
 
 # ═══════════════════════════════════════════════════════════
-# 4. STREAMLIT UI & AKIŞ
+# 4. UI & AKIŞ
 # ═══════════════════════════════════════════════════════════
-st.markdown("""<div class="main-header"><h1>🚀 BIST TrendScout Pro v3.6</h1><p>Python 3.14 Uyumlu | Saf Pandas Altyapısı</p></div>""", unsafe_allow_html=True)
+st.markdown("<div class='main-header'><h1>🚀 BIST TrendScout PRO v4.0</h1><p>Python 3.14 Uyumlu | Saf Pandas Motoru</p></div>", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("⚙️ Parametreler")
@@ -165,29 +130,29 @@ with st.sidebar:
         "adx_trend": st.slider("ADX Trend", 15, 35, 20),
         "adx_guclu": st.slider("ADX Güçlü", 25, 50, 30)
     }
-    btn = st.button("🔍 Analiz Başlat", type="primary", width="stretch")
-    ai_toggle = st.toggle("🤖 AI Yorumu", value=True)
+    
+    if st.button("🔍 Analiz Başlat", type="primary", width="stretch"):
+        tickers = fetch_tickers()
+        progress = st.progress(0, text="Taranıyor...")
+        results = []
+        for i, sym in enumerate(tickers):
+            progress.progress((i+1)/len(tickers), text=f"{sym} ({i+1}/{len(tickers)})")
+            res = analyze_stock(sym, params)
+            if res: results.append(res)
+        progress.empty()
+        st.session_state.results = pd.DataFrame(results) if results else pd.DataFrame()
+        st.success(f"✅ {len(results)} hisse bulundu." if results else "⚠️ Sonuç yok.")
 
-if btn:
-    tickers = fetch_bist_tickers()
-    progress = st.progress(0, text="Taranıyor...")
-    results = []
-    for i, sym in enumerate(tickers):
-        progress.progress((i+1)/len(tickers), text=f"{sym} ({i+1}/{len(tickers)})")
-        res = analyze_stock(sym, params)
-        if res: results.append(res)
-    progress.empty()
-    st.session_state.results = pd.DataFrame(results)
-    st.success(f"✅ {len(results)} hisse bulundu." if results else "⚠️ Sonuç yok.")
-
+# Sonuçlar
 if "results" in st.session_state and not st.session_state.results.empty:
     df_res = st.session_state.results
     
-    # 🟢 Pandas 3.x Uyumlu Stil
+    # Tablo Renklendirme (Pandas 3.x uyumlu)
     def color_row(row):
-        if row['Skor'] >= 75: return 'background-color: #00cc0044'
-        if row['Skor'] >= 50: return 'background-color: #ffaa0044'
-        return 'background-color: #ff444444'
+        if row['Skor'] >= 75: return ['background-color: #00cc0044'] * len(row)
+        if row['Skor'] >= 50: return ['background-color: #ffaa0044'] * len(row)
+        return ['background-color: #ff444444'] * len(row)
+        
     st.dataframe(df_res.style.apply(color_row, axis=1), width="stretch", height=350)
     
     # İstatistikler
@@ -197,32 +162,26 @@ if "results" in st.session_state and not st.session_state.results.empty:
     c3.metric("Ort. RSI", df_res["RSI"].mean().round(1))
     c4.metric("Ort. Skor", df_res["Skor"].mean().round(1))
     
-    # CSV
+    # CSV İndir
     csv = df_res.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("📥 CSV İndir", csv, f"bist_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+    st.download_button("📥 CSV İndir", csv, f"bist_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", width="stretch")
     
-    # Detay & AI
+    # Detay Grafik
     st.markdown("---")
-    sel = st.selectbox("Hisse Seç:", df_res["Hisse"].tolist())
+    sel = st.selectbox("Detay Grafik İçin Hisse:", df_res["Hisse"].tolist())
     if sel:
         sym = f"{sel}.IS"
-        df = fetch_data(sym)
-        if df is not None:
-            df = calculate_indicators(df)
-            with st.expander("📊 Teknik Grafik", expanded=True):
-                fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.5, 0.25, 0.25])
-                fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"]), row=1, col=1)
-                fig.add_trace(go.Scatter(x=df.index, y=df["rsi"], name="RSI"), row=2, col=1)
-                fig.add_trace(go.Scatter(x=df.index, y=df["adx"], name="ADX"), row=3, col=1)
-                fig.update_layout(height=600, xaxis_rangeslider_visible=False)
-                st.plotly_chart(fig, width="stretch")
-                
-        if ai_toggle:
-            with st.spinner("🤖 Qwen analiz yapıyor..."):
-                ai_res = get_ai_analysis(sym, df)
-            if "error" in ai_res:
-                st.warning(ai_res["error"])
-            else:
-                st.markdown(f"""<div class="ai-card"><b>🎯 Öneri:</b> {ai_res.get('öneri','N/A')} | <b>Risk:</b> {ai_res.get('risk', '?')}/10<br><i>{ai_res.get('gerekce','')}</i></div>""", unsafe_allow_html=True)
+        df = yf.Ticker(sym).history(period="3mo")
+        if len(df) > 0:
+            df = calculate_indicators(df, params)
+            fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.5, 0.25, 0.25])
+            fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"]), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df["EMA50"], line=dict(color="orange"), name="EMA50"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI"), row=2, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df["ADX"], name="ADX"), row=3, col=1)
+            fig.update_layout(height=600, xaxis_rangeslider_visible=False)
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.warning("Grafik verisi yüklenemedi.")
 
-st.caption("⚠️ Bu uygulama yatırım tavsiyesi değildir. Veriler bilgilendirme amaçlıdır. © 2026 TrendScout Pro")
+st.caption("⚠️ Bu uygulama yatırım tavsiyesi değildir. © 2026 TrendScout Pro")
