@@ -1,6 +1,6 @@
 # =========================================
 # 🚀 BIST TrendScout PRO v3.5 - Streamlit Cloud Ready
-# ✅ pandas_ta YOK | ✅ Python 3.14 Uyumlu | ✅ Tüm Hatalar Giderildi
+# ✅ Python 3.14 Uyumlu | ✅ pandas_ta YOK | ✅ Sol Panel Ayarları
 # =========================================
 
 import streamlit as st
@@ -9,12 +9,15 @@ import numpy as np
 import yfinance as yf
 import requests
 import time
+import warnings
 from datetime import datetime
+
+warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="BIST TrendScout PRO", page_icon="📈", layout="wide")
 
 # =========================================
-# 📊 TEKNİK GÖSTERGELER (Manuel Hesaplama)
+# 📊 TEKNİK GÖSTERGELER (Manuel - pandas_ta gerektirmez)
 # =========================================
 
 def calculate_rsi(series, length=14):
@@ -86,7 +89,7 @@ def get_bist_hisseler():
         r = requests.post(url, json=payload, timeout=30)
         data = r.json()
         hisseler = [item["d"][0].replace("BIST:", "") for item in data["data"]]
-        return list(set([h.strip().upper() for h in hisseler if len(h) <= 5]))
+        return list(set([h.strip().upper() for h in hisseler if 2 <= len(h) <= 5]))
     except:
         return ["AKBNK", "GARAN", "ISCTR", "YKBNK", "THYAO", "EREGL", "TUPRS", 
                 "BIMAS", "MGROS", "SISE", "KCHOL", "SAHOL", "ARCLK", "VESBE", "FROTO"]
@@ -154,8 +157,7 @@ def analyze_symbol(symbol, params):
     para = pd.notna(d["CMF"]) and d["CMF"] > 0
     breakout = len(df_d) > 20 and d["close"] > df_d["HH20"].iloc[-2]
     
-    # ✅ DÜZELTME: h4["close"] scalar olduğu için ewm() hatası veriyordu.
-    # add_indicators zaten EMA50'yi hesapladı, doğrudan h4["EMA50"] kullanıyoruz.
+    # ✅ Scalar hatası giderildi: add_indicators zaten EMA50 hesapladı
     mtf = (pd.notna(h4.get("RSI")) and h4["RSI"] > 50 and 
            pd.notna(h4.get("EMA50")) and h4["close"] > h4["EMA50"])
     
@@ -171,66 +173,106 @@ def analyze_symbol(symbol, params):
     return None
 
 # =========================================
-# 🖥️ ARAYÜZ
+# 🖥️ SOL PANEL (SIDEBAR)
 # =========================================
 
 with st.sidebar:
     st.title("⚙️ Parametreler")
-    rsi_min = st.slider("RSI Minimum", 30, 80, 55)
-    adx_min = st.slider("ADX Minimum", 10, 50, 20)
-    volume_z_min = st.slider("Hacim Z-Skor Min", 0.5, 5.0, 2.0)
+    
+    rsi_min = st.slider("📊 RSI Minimum", 30, 80, 55, help="Momentum gücü eşiği")
+    adx_min = st.slider("🌪️ ADX Minimum", 10, 50, 20, help="Trend kuvveti eşiği")
+    volume_z_min = st.slider("📦 Hacim Z-Skor Min", 0.5, 5.0, 2.0, help="Anormal hacim tespiti")
     st.divider()
-    max_hisse = st.slider("Maksimum Hisse", 50, 500, 200)
-    use_fast_filter = st.checkbox("Hızlı Filtre", value=True)
+    
+    st.markdown("**📈 İşlenecek Hisse Sayısı**")
+    hisse_modu = st.radio("Seçim", ["Tümü", "Belirli Sayı"], horizontal=True)
+    if hisse_modu == "Belirli Sayı":
+        max_hisse = st.number_input("Adet", min_value=10, max_value=500, value=100, step=10)
+    else:
+        max_hisse = 500  # Yeterince büyük sınır
+    
+    use_fast_filter = st.checkbox("⚡ Hızlı Ön Filtre (EMA20)", value=True)
+    st.divider()
+    
+    if st.button("🔍 Taramayı Başlat", type="primary", width="stretch"):
+        st.session_state.run_scan = True
+        
+    if st.button("🔄 Sıfırla", width="stretch"):
+        st.session_state.clear()
+        st.rerun()
+
+# =========================================
+# 🖥️ ANA EKRAN
+# =========================================
 
 st.title("🚀 BIST TrendScout PRO v3.5")
-st.markdown("""<div style='background:linear-gradient(90deg,#1e3c72,#2a5298);padding:15px;border-radius:10px;color:white'>
+st.markdown("""<div style='background:linear-gradient(90deg,#1e3c72,#2a5298);padding:12px;border-radius:8px;color:white'>
 <strong>📊 yfinance + Manuel İndikatörler | Python 3.14 Uyumlu</strong></div>""", unsafe_allow_html=True)
 
-if st.button("🔍 Taramayı Başlat", type="primary", width="stretch"):
+if st.session_state.get("run_scan", False):
+    st.session_state.run_scan = False  # Tekrar tetiklenmeyi engelle
+    
     params = {"rsi_min": rsi_min, "adx_min": adx_min, "volume_z_min": volume_z_min}
     
-    with st.spinner("📡 Hisseler yükleniyor..."):
+    with st.spinner("📡 BIST hisseleri yükleniyor..."):
         hisseler = get_bist_hisseler()
+    
     if not hisseler:
-        st.error("❌ Hisseler yüklenemedi")
+        st.error("❌ Hisseler yüklenemedi. Lütfen daha sonra deneyin.")
         st.stop()
         
-    st.info(f"✅ {len(hisseler)} hisse bulundu. Tarama başlıyor...")
+    # Seçilen limite göre kırp
+    total_scan = min(len(hisseler), max_hisse)
+    st.info(f"✅ Toplam {len(hisseler)} hisse bulundu. **{total_scan} adet** işlenecek.")
+    
     progress_bar = st.progress(0)
     status_text = st.empty()
     results = []
-    total = min(len(hisseler), max_hisse)
     
-    for i, h in enumerate(hisseler[:total]):
-        progress_bar.progress((i + 1) / total)
-        status_text.text(f"🔎 {h} ({i+1}/{total})")
-        if use_fast_filter and not hizli_filtre(h): continue
+    for i, h in enumerate(hisseler[:total_scan]):
+        progress_bar.progress((i + 1) / total_scan)
+        status_text.text(f"🔎 {h} ({i+1}/{total_scan})")
+        
+        if use_fast_filter and not hizli_filtre(h):
+            continue
+            
         res = analyze_symbol(h, params)
-        if res: results.append(res)
-        time.sleep(0.2)
+        if res:
+            results.append(res)
+            if len(results) % 5 == 0:
+                st.dataframe(pd.DataFrame(results).sort_values("Hacim Skor", ascending=False), width="stretch", hide_index=True)
+                
+        time.sleep(0.15)  # yfinance rate limit koruması
         
     progress_bar.empty()
     status_text.empty()
     
+    # =========================================
+    # 📊 SONUÇLAR
+    # =========================================
     if results:
-        df_results = pd.DataFrame(results).sort_values("Hacim Skor", ascending=False)
+        df_res = pd.DataFrame(results).sort_values("Hacim Skor", ascending=False)
+        
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📈 Sinyal", len(results))
-        c2.metric("💹 Ort. Fiyat", f"{df_results['Fiyat'].mean():.2f} ₺")
-        c3.metric("🔥 Ort. RSI", f"{df_results['RSI'].dropna().mean():.1f}")
-        c4.metric("🎯 Ort. ADX", f"{df_results['ADX'].dropna().mean():.1f}")
+        c1.metric("🎯 Sinyal", len(results))
+        c2.metric("💹 Ort. Fiyat", f"{df_res['Fiyat'].mean():.2f} ₺")
+        c3.metric("📈 Ort. RSI", f"{df_res['RSI'].dropna().mean():.1f}")
+        c4.metric("🌪️ Ort. ADX", f"{df_res['ADX'].dropna().mean():.1f}")
         
-        st.dataframe(df_results.style.format({
-            "Fiyat": "{:.2f}", "Degisim_%": "{:.2f}%", "RSI": "{:.2f}", 
-            "ADX": "{:.2f}", "Hacim Skor": "{:.2f}", "CMF": "{:.3f}"
-        }).background_gradient(subset=["Hacim Skor"], cmap="YlOrRd"), width="stretch", hide_index=True)
+        st.subheader("📋 Sinyal Tablosu")
+        st.dataframe(
+            df_res.style.format({
+                "Fiyat": "{:.2f}", "Degisim_%": "{:.2f}%", "RSI": "{:.2f}", 
+                "ADX": "{:.2f}", "Hacim Skor": "{:.2f}", "CMF": "{:.3f}"
+            }).background_gradient(subset=["Hacim Skor"], cmap="YlOrRd"),
+            width="stretch", hide_index=True
+        )
         
-        csv = df_results.to_csv(index=False, encoding="utf-8-sig")
+        csv = df_res.to_csv(index=False, encoding="utf-8-sig")
         st.download_button("📥 CSV İndir", csv, f"bist_sinyaller_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv", width="stretch")
     else:
-        st.warning("⚠️ Sinyal bulunamadı. Parametreleri gevşetin.")
+        st.warning("⚠️ Kriterlerinize uygun sinyal bulunamadı. Parametreleri gevşetmeyi deneyin.")
 
-with st.expander("📖 Bilgi"):
-    st.markdown("""**Kriterler:** Fiyat>EMA50, RSI>min, ADX>min, Hacim Z>2, CMF>0, 20g Kırılım, 4H Onay.  
-⚠️ Yatırım tavsiyesi değildir. Eğitim amaçlıdır.""")
+# Footer
+st.markdown("---")
+st.markdown(f"<div style='text-align:center;color:gray;font-size:0.85em'>📊 BIST TrendScout PRO | Veriler 15dk gecikmeli olabilir | {datetime.now().strftime('%H:%M:%S')}</div>", unsafe_allow_html=True)
