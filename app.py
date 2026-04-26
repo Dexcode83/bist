@@ -180,7 +180,7 @@ with st.sidebar:
     adx_min = st.slider("ADX Minimum", 10, 50, 20)
     volume_z_min = st.slider("Hacim Z-Skor Min", 0.5, 5.0, 2.0)
     st.divider()
-    max_hisse = st.slider("Maksimum Hisse", 50, Tümü, 200)
+    max_hisse = st.slider("Maksimum Hisse", 50, 500, 200)
     use_fast_filter = st.checkbox("Hızlı Filtre", value=True)
 
 st.title("🚀 BIST TrendScout PRO v3.5")
